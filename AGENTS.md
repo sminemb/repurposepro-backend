@@ -54,6 +54,7 @@ The `services/api-gateway` service handles:
 - Dashboard data
 - Processing job records
 - Generated video metadata
+- Notification records
 - Templates later
 - Export records later
 - Admin features later
@@ -138,6 +139,7 @@ The database should store:
 - Projects
 - Processing jobs
 - Generated video metadata
+- Notification records
 - Templates later
 - Export records later
 - Admin-related metadata later
@@ -300,6 +302,142 @@ For MVP, prioritize Arcjet protection on:
 /api/projects/:id/process
 ```
 
+## Notification Strategy
+
+RepurposePro should support notifications after the core processing flow is connected.
+
+Notifications should be owned by the Express.js API Gateway, not the FastAPI AI Service.
+
+The backend should:
+
+- Create notification records
+- Store notifications in Neon/PostgreSQL
+- Associate notifications with users
+- Track read/unread status
+- Trigger notifications when important project/job events happen
+- Provide notification API routes for the frontend
+
+The frontend should:
+
+- Display notification bell/count
+- Display notification dropdown or notification page
+- Show toast messages when useful
+- Mark notifications as read
+- Poll the API or later subscribe to real-time events
+
+For MVP, use REST-based notifications first. Real-time notifications using Server-Sent Events or WebSockets can be added later.
+
+### Notification Events
+
+Create notifications for events such as:
+
+- Video uploaded successfully
+- Processing job started
+- Processing job completed
+- Processing job failed
+- Summary video is ready
+- Reels are ready
+
+Recommended notification types:
+
+```txt
+video_uploaded
+processing_started
+processing_completed
+processing_failed
+generated_video_ready
+```
+
+### Notification Database Model
+
+Add a `Notification` model when the notification phase begins.
+
+Recommended Prisma model:
+
+```prisma
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  metadata  Json?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum NotificationType {
+  video_uploaded
+  processing_started
+  processing_completed
+  processing_failed
+  generated_video_ready
+}
+```
+
+Also add the reverse relation to the `User` model:
+
+```prisma
+notifications Notification[]
+```
+
+### Notification API Routes
+
+Recommended notification routes:
+
+```txt
+GET   /api/notifications
+GET   /api/notifications/unread-count
+PATCH /api/notifications/:id/read
+PATCH /api/notifications/read-all
+```
+
+Rules:
+
+- All notification routes must be protected by Better Auth session middleware.
+- Users can only access their own notifications.
+- Admin users may access all notifications only if an admin-specific route is added later.
+- Use Zod validation for params and query inputs.
+- Use the existing response helper.
+- Use the existing centralized error handler.
+
+### Notification Folder Structure
+
+Add these files during the notification phase:
+
+```txt
+services/api-gateway/src/
+├── routes/
+│   └── notifications.routes.ts
+├── controllers/
+│   └── notifications.controller.ts
+├── services/
+│   └── notifications.service.ts
+├── validators/
+│   └── notification.validator.ts
+```
+
+Optional later:
+
+```txt
+services/api-gateway/src/
+├── services/
+│   └── realtime.service.ts
+```
+
+### Notification Rules
+
+- Express API Gateway owns notification logic.
+- FastAPI AI Service should not directly create notifications.
+- FastAPI can return processing results to Express.
+- Express should decide which notification records to create.
+- Notifications should be stored in Neon/PostgreSQL.
+- Notifications should not block video processing if notification creation fails.
+- Notification failures should be logged but should not crash the processing workflow.
+
 ## Coding Rules
 
 ### General Rules
@@ -390,6 +528,7 @@ services/api-gateway/
     │   ├── videos.routes.ts
     │   ├── jobs.routes.ts
     │   ├── generated-videos.routes.ts
+    │   ├── notifications.routes.ts
     │   └── admin.routes.ts
     ├── controllers/
     ├── services/
@@ -510,6 +649,7 @@ Start with:
 - Project
 - ProcessingJob
 - GeneratedVideo
+- Notification
 
 The first four auth-related models may be generated or required by Better Auth.
 
@@ -552,6 +692,16 @@ Generated video types:
 ```txt
 summary
 reel
+```
+
+Notification types:
+
+```txt
+video_uploaded
+processing_started
+processing_completed
+processing_failed
+generated_video_ready
 ```
 
 User roles:
@@ -644,6 +794,11 @@ POST   /api/jobs/:id/cancel
 
 GET    /api/projects/:id/generated-videos
 GET    /api/generated-videos/:id
+
+GET    /api/notifications
+GET    /api/notifications/unread-count
+PATCH  /api/notifications/:id/read
+PATCH  /api/notifications/read-all
 ```
 
 Do not manually implement these custom auth routes unless specifically requested:
@@ -835,6 +990,35 @@ For reels, prefer:
 Hook strength + Standalone clarity + Emotional impact + Shareability
 ```
 
+## LLM Strategy
+
+An LLM may be used later, but it should not be required for the MVP.
+
+For MVP, prefer:
+
+```txt
+Whisper/faster-whisper → transcript
+FFmpeg → clip cutting/rendering
+rule-based scoring → highlight detection
+basic selection algorithm → summary/reels
+```
+
+Use an LLM later for:
+
+- Transcript summarization
+- Topic extraction
+- Highlight ranking
+- Summary planning
+- Reel title generation
+- Hook generation
+- Caption copy improvement
+- Social post descriptions
+- Explaining why a segment was selected
+
+The LLM should live inside the FastAPI AI Service, not the Express API Gateway.
+
+Do not add LLM provider integration until the basic rule-based pipeline works.
+
 ## Build Order
 
 Build the backend in this order:
@@ -850,15 +1034,17 @@ Build the backend in this order:
 9. FastAPI AI Service foundation
 10. Express-to-FastAPI communication
 11. Replace Express mock processing with FastAPI mock processing
-12. Real FFmpeg audio extraction
-13. Whisper transcription
-14. Transcript segmentation
-15. Basic highlight scoring
-16. Summary clip generation
-17. Reel clip generation
-18. Captions
-19. Vertical formatting
-20. Templates, publishing, analytics, and admin tools
+12. Notifications
+13. Real FFmpeg audio extraction
+14. Whisper transcription
+15. Transcript segmentation
+16. Basic highlight scoring
+17. Summary clip generation
+18. Reel clip generation
+19. Captions
+20. Vertical formatting
+21. Optional LLM enhancement
+22. Templates, publishing, analytics, and admin tools
 
 ## Current Phase Guidance
 
@@ -1074,9 +1260,42 @@ POST /api/projects/:id/process
 → Express marks job/project completed
 ```
 
-### Phase 10 — FFmpeg Audio Extraction
+### Phase 10 — Notifications
 
 For Phase 10:
+
+- Add notification support to the Express API Gateway.
+- Add a `Notification` Prisma model.
+- Add notification service, controller, routes, and validators.
+- Add notification creation helpers.
+- Create notifications when:
+  - a video is uploaded
+  - a processing job starts
+  - a processing job completes
+  - a processing job fails
+  - generated videos are ready
+
+- Add unread count endpoint.
+- Add mark-as-read endpoint.
+- Add mark-all-as-read endpoint.
+- Keep notifications REST-based first.
+- Do not add WebSockets yet unless explicitly requested.
+- Do not add email notifications yet unless explicitly requested.
+- Do not add push notifications yet unless explicitly requested.
+
+Expected MVP notification flow:
+
+```txt
+Processing job completed
+→ Express saves GeneratedVideo records
+→ Express creates Notification record
+→ Frontend calls GET /api/notifications
+→ Frontend displays "Your summary and reels are ready"
+```
+
+### Phase 11 — FFmpeg Audio Extraction
+
+For Phase 11:
 
 - Add real FFmpeg support inside the FastAPI AI Service.
 - Extract audio from uploaded video files.
@@ -1097,12 +1316,12 @@ Required behavior:
 input video → extracted audio file
 ```
 
-### Phase 11 — Whisper Transcription
+### Phase 12 — Whisper Transcription
 
-For Phase 11:
+For Phase 12:
 
 - Add faster-whisper or Whisper transcription inside the FastAPI AI Service.
-- Use extracted audio from Phase 10.
+- Use extracted audio from Phase 11.
 - Generate timestamped transcript output.
 - Save transcript as JSON.
 - Do not generate highlights yet.
@@ -1129,9 +1348,9 @@ text
 confidence if available
 ```
 
-### Phase 12 — Transcript Segmentation
+### Phase 13 — Transcript Segmentation
 
-For Phase 12:
+For Phase 13:
 
 - Convert timestamped transcript into logical segments.
 - Start with simple fixed-window or sentence-based segmentation.
@@ -1153,9 +1372,9 @@ text
 wordCount
 ```
 
-### Phase 13 — Basic Highlight Scoring
+### Phase 14 — Basic Highlight Scoring
 
-For Phase 13:
+For Phase 14:
 
 - Add a simple rule-based highlight scoring algorithm.
 - Use transcript signals first.
@@ -1187,9 +1406,9 @@ reason
 text
 ```
 
-### Phase 14 — Summary Clip Generation
+### Phase 15 — Summary Clip Generation
 
-For Phase 14:
+For Phase 15:
 
 - Generate a 7–10 minute summary video using selected highlight segments.
 - Use FFmpeg to cut and concatenate clips.
@@ -1203,9 +1422,9 @@ Required behavior:
 original video + selected segments → summary.mp4
 ```
 
-### Phase 15 — Reel Clip Generation
+### Phase 16 — Reel Clip Generation
 
-For Phase 15:
+For Phase 16:
 
 - Generate multiple short reel clips from top highlight candidates.
 - Clips should be self-contained.
@@ -1220,9 +1439,9 @@ Required behavior:
 original video + highlight timestamps → reel-1.mp4, reel-2.mp4, reel-3.mp4
 ```
 
-### Phase 16 — Captions
+### Phase 17 — Captions
 
-For Phase 16:
+For Phase 17:
 
 - Generate captions from transcript timestamps.
 - Export captions as `.srt` and/or `.vtt`.
@@ -1237,9 +1456,9 @@ reel-1.srt
 reel-2.srt
 ```
 
-### Phase 17 — Vertical Formatting
+### Phase 18 — Vertical Formatting
 
-For Phase 17:
+For Phase 18:
 
 - Format reels for vertical 9:16 output.
 - Start with center crop.
@@ -1252,9 +1471,27 @@ Required output:
 vertical reel mp4 files, 9:16 aspect ratio
 ```
 
-### Phase 18 — Templates, Publishing, Analytics, and Admin Tools
+### Phase 19 — Optional LLM Enhancement
 
-For Phase 18:
+For Phase 19:
+
+- Add optional LLM support inside the FastAPI AI Service.
+- Use the LLM only after the basic rule-based pipeline works.
+- Use the LLM for:
+  - topic extraction
+  - summary planning
+  - highlight reranking
+  - reel title generation
+  - hook generation
+  - social caption generation
+
+- Do not make the LLM required for the whole pipeline unless explicitly requested.
+- Keep provider keys in environment variables.
+- Do not hard-code LLM prompts or secrets in controllers.
+
+### Phase 20 — Templates, Publishing, Analytics, and Admin Tools
+
+For Phase 20:
 
 - Add branding templates.
 - Add caption styles.
