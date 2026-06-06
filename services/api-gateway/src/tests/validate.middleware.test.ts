@@ -1,7 +1,5 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-
 import type { NextFunction, Request, Response } from "express";
+import { expect, test } from "vitest";
 
 import { validate } from "../middlewares/validate.middleware.js";
 import { listProjectJobsQuerySchema } from "../validators/job.validator.js";
@@ -20,18 +18,18 @@ test("validates an Express 5 getter-only query without assigning to it", () => {
   });
 
   const next: NextFunction = (error?: unknown) => {
-    assert.equal(error, undefined);
+    expect(error).toBeUndefined();
     nextCalled = true;
   };
 
-  assert.doesNotThrow(() => {
+  expect(() => {
     validate({
       query: listProjectJobsQuerySchema,
     })(request, response, next);
-  });
+  }).not.toThrow();
 
-  assert.equal(nextCalled, true);
-  assert.deepEqual(request.validatedQuery, {
+  expect(nextCalled).toBe(true);
+  expect(request.validatedQuery).toEqual({
     status: "queued",
   });
 });

@@ -16,8 +16,8 @@ The backend uses a hybrid architecture:
 - Neon Serverless Postgres for persistent data
 - Better Auth for authentication and session management
 - Arcjet for API protection, bot protection, and rate limiting
-- Redis for background job queues
-- S3-compatible storage for video assets
+- Redis for background job queues later
+- S3-compatible storage for video assets later
 
 ## Main Architecture
 
@@ -25,6 +25,9 @@ Use a monorepo-style backend structure:
 
 ```txt
 repurposepro-backend/
+├── AGENTS.md
+├── README.md
+├── docker-compose.yml
 ├── services/
 │   ├── api-gateway/      # Express.js + TypeScript main backend
 │   └── ai-service/       # FastAPI + Python AI/video service
@@ -49,10 +52,11 @@ The `services/api-gateway` service handles:
 - Project CRUD
 - Video upload coordination
 - Dashboard data
-- Templates
-- Generated video records
-- Export records
-- Admin features
+- Processing job records
+- Generated video metadata
+- Templates later
+- Export records later
+- Admin features later
 - Communication with the FastAPI AI service
 - Database ownership
 - User-facing REST API
@@ -73,6 +77,8 @@ The `services/ai-service` service handles:
 - FFmpeg rendering
 - AI/video processing pipelines
 
+The frontend should call the Express API Gateway only. The FastAPI AI Service is an internal backend service and should not be exposed directly to end users.
+
 ## Technology Stack
 
 ### API Gateway
@@ -87,7 +93,7 @@ Use:
 - Neon Serverless Postgres
 - Prisma ORM
 - Zod for validation
-- Multer or presigned uploads for video uploads
+- Multer for local MVP video uploads
 - Redis/BullMQ for queues later
 - Axios or fetch for internal API calls
 
@@ -97,18 +103,33 @@ Use:
 
 - Python
 - FastAPI
-- Celery or RQ for workers
-- Redis as broker
+- Pydantic for request and response validation
+- Celery or RQ for workers later
+- Redis as broker later
 - FFmpeg for video/audio processing
 - faster-whisper for transcription
 - PySceneDetect for scene detection
 - OpenCV for video analysis
 - MediaPipe or YOLO later for subject tracking
-- Pydantic for validation
+- pytest for testing FastAPI logic
+
+### AI Service Additional Tools
+
+Use these tools gradually as the pipeline becomes real:
+
+- FFmpeg for audio extraction, cutting, concatenation, scaling, and rendering
+- faster-whisper for speech-to-text transcription
+- PySceneDetect for scene detection
+- OpenCV for video analysis
+- MediaPipe or YOLO later for face/person tracking
+- Pydantic for request and response validation
+- pytest for testing FastAPI logic
+
+Do not add all AI tools at once. Add them only when the matching phase requires them.
 
 ## Database Strategy
 
-Use **Neon Serverless Postgres** as the primary PostgreSQL database provider.
+Use Neon Serverless Postgres as the primary PostgreSQL database provider.
 
 The database should store:
 
@@ -117,11 +138,11 @@ The database should store:
 - Projects
 - Processing jobs
 - Generated video metadata
-- Templates
-- Export records
-- Admin-related metadata
+- Templates later
+- Export records later
+- Admin-related metadata later
 
-The database should **not** store video files directly.
+The database should not store video files directly.
 
 Store actual video/audio/caption/output files in:
 
@@ -162,7 +183,7 @@ For local development, a Neon development branch is acceptable. A local Docker P
 
 ## Authentication Strategy
 
-Use **Better Auth** for authentication instead of building custom JWT authentication from scratch.
+Use Better Auth for authentication instead of building custom JWT authentication from scratch.
 
 Better Auth should handle:
 
@@ -209,7 +230,7 @@ For local development, the API Gateway should run on port `5000`.
 
 ## API Protection Strategy
 
-Use **Arcjet** for API protection in the Express.js API Gateway.
+Use Arcjet for API protection in the Express.js API Gateway.
 
 Arcjet should be added after the base API Gateway and Better Auth setup are working.
 
@@ -255,10 +276,10 @@ Auth routes:
 - 5 to 10 attempts per minute per IP
 
 Upload routes:
-- 3 to 5 uploads per hour per authenticated user
+- 3 to 5 uploads per hour per authenticated user or IP
 
 Processing routes:
-- 2 to 5 processing jobs per hour per authenticated user
+- 2 to 5 processing jobs per hour per authenticated user or IP
 ```
 
 Recommended protected routes:
@@ -296,6 +317,8 @@ For MVP, prioritize Arcjet protection on:
 - Add comments only when they clarify important logic.
 - Use production-style error handling.
 - Do not change the product name from RepurposePro.
+- Do not jump ahead to later phases unless explicitly requested.
+- Make sure each phase builds and runs before moving to the next phase.
 
 ## Express.js / TypeScript Rules
 
@@ -309,6 +332,8 @@ For MVP, prioritize Arcjet protection on:
 - Validate request bodies, params, and query strings.
 - Use consistent API responses for non-Better Auth routes.
 - Let Better Auth manage its own auth route responses.
+- Avoid using `any` unless absolutely necessary.
+- Add or update Express request typing when authentication data is attached to `req`.
 
 Recommended response shape for custom API routes:
 
@@ -340,6 +365,10 @@ services/api-gateway/
 ├── tsconfig.json
 ├── Dockerfile
 ├── .env.example
+├── prisma/
+│   └── schema.prisma
+├── storage/
+│   └── uploads/
 └── src/
     ├── app.ts
     ├── server.ts
@@ -355,6 +384,7 @@ services/api-gateway/
     ├── routes/
     │   ├── index.routes.ts
     │   ├── health.routes.ts
+    │   ├── me.routes.ts
     │   ├── users.routes.ts
     │   ├── projects.routes.ts
     │   ├── videos.routes.ts
@@ -367,10 +397,13 @@ services/api-gateway/
     │   ├── arcjet.middleware.ts
     │   ├── auth.middleware.ts
     │   ├── role.middleware.ts
+    │   ├── upload.middleware.ts
+    │   ├── validate.middleware.ts
     │   ├── error.middleware.ts
     │   └── not-found.middleware.ts
     ├── validators/
     ├── utils/
+    ├── types/
     └── tests/
 ```
 
@@ -381,11 +414,12 @@ services/api-gateway/
 - Keep API routes thin.
 - Put AI/video logic inside services, pipelines, or algorithms.
 - Do not run long video processing directly inside a blocking request in production.
-- Prefer background jobs for long-running tasks.
+- Prefer background jobs for long-running tasks later.
 - Use structured logging.
 - Use typed Python where practical.
 - Keep FFmpeg commands isolated in utility functions.
 - Store generated files using a storage service abstraction.
+- Keep the FastAPI service internal to the backend system.
 
 ## FastAPI Folder Structure
 
@@ -412,115 +446,38 @@ services/ai-service/
     │   ├── logging.py
     │   └── security.py
     ├── schemas/
+    │   ├── processing_schema.py
+    │   ├── transcript_schema.py
+    │   ├── highlight_schema.py
+    │   ├── summary_schema.py
+    │   └── reel_schema.py
     ├── services/
+    │   ├── processing_service.py
+    │   ├── audio_service.py
+    │   ├── transcription_service.py
+    │   ├── highlight_service.py
+    │   ├── summary_service.py
+    │   ├── reel_service.py
+    │   ├── caption_service.py
+    │   └── storage_service.py
     ├── workers/
     ├── pipelines/
+    │   ├── full_video_pipeline.py
+    │   ├── summary_pipeline.py
+    │   └── reels_pipeline.py
     ├── algorithms/
+    │   ├── segmenter.py
+    │   ├── highlight_scoring.py
+    │   ├── mmr_selector.py
+    │   ├── hook_detector.py
+    │   └── vertical_crop_tracker.py
     ├── utils/
+    │   ├── ffmpeg_utils.py
+    │   ├── file_utils.py
+    │   ├── time_utils.py
+    │   └── exceptions.py
     └── tests/
 ```
-
-## Build Order
-
-Build the backend in this order:
-
-1. Express.js API Gateway foundation
-2. Better Auth setup
-3. Prisma and Neon Serverless Postgres setup
-4. User session verification and protected routes
-5. Arcjet API protection
-6. Project CRUD
-7. Video upload
-8. Processing job system
-9. Mock FastAPI AI service
-10. Express-to-FastAPI communication
-11. Real FFmpeg audio extraction
-12. Whisper transcription
-13. Transcript segmentation
-14. Basic highlight scoring
-15. Summary clip generation
-16. Reel clip generation
-17. Captions
-18. Vertical formatting
-19. Templates, publishing, analytics, and admin tools
-
-## Current Phase Guidance
-
-When working on early phases, do not jump ahead.
-
-### Phase 1 — API Gateway Foundation
-
-For Phase 1:
-
-- Build only the Express TypeScript foundation.
-- Include health check.
-- Include config loading.
-- Include error handling.
-- Include routing structure.
-- Use ES Modules.
-- Do not add database.
-- Do not add Better Auth yet.
-- Do not add Arcjet yet.
-- Do not add authentication.
-- Do not add FastAPI.
-- Do not add AI processing.
-
-### Phase 2 — Better Auth and Database
-
-For Phase 2:
-
-- Add Better Auth.
-- Add Prisma.
-- Add Neon Serverless Postgres.
-- Add the required Better Auth database schema.
-- Add auth and database environment variables.
-- Add auth routes under `/api/auth`.
-- Add session verification middleware for protected routes.
-- Add a basic authenticated route for testing.
-
-Do not build project CRUD until Better Auth is working.
-
-### Phase 3 — Arcjet API Protection
-
-For Phase 3:
-
-- Add Arcjet to the API Gateway.
-- Add Arcjet environment variables.
-- Add Arcjet configuration in `src/lib/arcjet.ts` or `src/config/arcjet.ts`.
-- Add route-level Arcjet middleware.
-- Protect `/api/auth/*`.
-- Protect future upload and processing routes once they exist.
-- Add proper `429 Too Many Requests` error responses.
-- Do not add project CRUD unless Arcjet setup is complete.
-
-### Phase 4 — Project CRUD
-
-For Phase 4:
-
-- Add project CRUD.
-- Projects must belong to authenticated users.
-- Protect project routes with Better Auth session middleware.
-- Enforce project ownership.
-- Add role-based access where needed.
-
-### Phase 5 — Video Upload
-
-For Phase 5:
-
-- Add video upload.
-- Store uploaded video path or URL.
-- Validate video file type and size.
-- Update project status after upload.
-- Keep actual video processing separate.
-
-### Phase 6 — Processing Jobs
-
-For Phase 6:
-
-- Add processing jobs.
-- Add job status tracking.
-- Use mock processing before real AI.
-- Do not implement real FFmpeg or Whisper until the job workflow works.
 
 ## Database Ownership
 
@@ -605,6 +562,51 @@ creator
 editor
 ```
 
+## User Role Guidance
+
+Use one `User` table with a `role` field.
+
+The roles are:
+
+### admin
+
+Admin users can manage the system.
+
+Typical admin permissions:
+
+- View all users
+- View all projects
+- Manage system-level records
+- Access admin routes
+- Debug or review processing jobs
+- Manage future templates/settings
+
+### creator
+
+Creator users are the main normal users.
+
+Typical creator permissions:
+
+- Create projects
+- Upload videos
+- Start processing jobs
+- View their own generated videos
+- Edit or delete their own projects
+- Export/download their own outputs later
+
+### editor
+
+Editor users are collaborators.
+
+Typical editor permissions:
+
+- View assigned or owned projects depending on MVP rules
+- Edit content metadata
+- Preview generated outputs
+- Assist creators with content review
+
+For MVP, it is acceptable to store the `editor` role but treat it similarly to `creator` until collaboration/assignment features are built.
+
 ## API Route Style
 
 Use RESTful routes for non-auth application routes.
@@ -615,10 +617,12 @@ Better Auth should own the auth routes under:
 /api/auth/*
 ```
 
-Recommended custom routes:
+Recommended custom Express routes:
 
 ```txt
 GET    /api/health
+
+GET    /api/me
 
 GET    /api/users
 GET    /api/users/:id
@@ -636,6 +640,7 @@ POST   /api/projects/:id/process
 
 GET    /api/jobs/:id
 GET    /api/projects/:id/jobs
+POST   /api/jobs/:id/cancel
 
 GET    /api/projects/:id/generated-videos
 GET    /api/generated-videos/:id
@@ -650,6 +655,30 @@ POST /api/auth/logout
 ```
 
 Better Auth should provide the correct auth endpoints.
+
+## FastAPI AI Service Route Style
+
+The FastAPI AI Service should use simple internal API routes.
+
+Initial routes:
+
+```txt
+GET  /health
+POST /process-video
+```
+
+Future routes may include:
+
+```txt
+POST /transcribe
+POST /detect-highlights
+POST /generate-summary
+POST /generate-reels
+```
+
+These FastAPI routes are internal service routes and should not be exposed directly to end users.
+
+The frontend should call the Express API Gateway, not the FastAPI AI Service directly.
 
 ## Security Requirements
 
@@ -686,9 +715,22 @@ Allowed input video formats:
 - `.mkv`
 - `.webm`
 
+Allowed MIME types:
+
+- `video/mp4`
+- `video/quicktime`
+- `video/x-matroska`
+- `video/webm`
+
 Default maximum video duration:
 
 - 2 hours
+
+Default maximum upload size:
+
+```txt
+2048 MB
+```
 
 Default output formats:
 
@@ -696,6 +738,20 @@ Default output formats:
 - `.srt`
 - `.vtt`
 - `.json`
+
+Upload field name must be:
+
+```txt
+video
+```
+
+Do not use the original filename directly as the stored filename. Use a safe generated filename.
+
+Recommended filename format:
+
+```txt
+projectId-timestamp-random.ext
+```
 
 ## Video Processing Requirements
 
@@ -740,6 +796,473 @@ Reels should:
 - Include captions
 - Be suitable for TikTok, Instagram Reels, and YouTube Shorts
 
+## Recommended Highlight Algorithm
+
+Use a hybrid multimodal approach later.
+
+For MVP, start with transcript-based scoring first.
+
+Initial highlight scoring signals:
+
+- Strong hook phrases
+- Questions
+- Numbered tips
+- Important statements
+- Summary/conclusion phrases
+- High information density
+- Emotional or opinionated language
+
+Later scoring signals:
+
+- Transcript semantic importance
+- Audio energy
+- Speaker emotion
+- Scene changes
+- Visual activity
+- Face/person presence
+- Topic importance
+- Platform-specific engagement signals
+
+For summary selection, prefer:
+
+```txt
+Importance + Coverage + Diversity + Coherence
+```
+
+For reels, prefer:
+
+```txt
+Hook strength + Standalone clarity + Emotional impact + Shareability
+```
+
+## Build Order
+
+Build the backend in this order:
+
+1. Express.js API Gateway foundation
+2. Better Auth setup
+3. Prisma and Neon Serverless Postgres setup
+4. User session verification and protected routes
+5. Arcjet API protection
+6. Project CRUD
+7. Video upload
+8. Processing job system with mock processing
+9. FastAPI AI Service foundation
+10. Express-to-FastAPI communication
+11. Replace Express mock processing with FastAPI mock processing
+12. Real FFmpeg audio extraction
+13. Whisper transcription
+14. Transcript segmentation
+15. Basic highlight scoring
+16. Summary clip generation
+17. Reel clip generation
+18. Captions
+19. Vertical formatting
+20. Templates, publishing, analytics, and admin tools
+
+## Current Phase Guidance
+
+When working on early phases, do not jump ahead.
+
+### Phase 1 — API Gateway Foundation
+
+For Phase 1:
+
+- Build only the Express TypeScript foundation.
+- Include health check.
+- Include config loading.
+- Include error handling.
+- Include routing structure.
+- Use ES Modules.
+- Do not add database.
+- Do not add Better Auth yet.
+- Do not add Arcjet yet.
+- Do not add authentication.
+- Do not add FastAPI.
+- Do not add AI processing.
+
+### Phase 2 — Better Auth and Database
+
+For Phase 2:
+
+- Add Better Auth.
+- Add Prisma.
+- Add Neon Serverless Postgres.
+- Add the required Better Auth database schema.
+- Add auth and database environment variables.
+- Add auth routes under `/api/auth`.
+- Add session verification middleware for protected routes.
+- Add a basic authenticated route for testing.
+
+Do not build project CRUD until Better Auth is working.
+
+### Phase 3 — Arcjet API Protection
+
+For Phase 3:
+
+- Add Arcjet to the API Gateway.
+- Add Arcjet environment variables.
+- Add Arcjet configuration in `src/lib/arcjet.ts` or `src/config/arcjet.ts`.
+- Add route-level Arcjet middleware.
+- Protect `/api/auth/*`.
+- Protect future upload and processing routes once they exist.
+- Add proper `429 Too Many Requests` error responses.
+- Do not add project CRUD unless Arcjet setup is complete.
+
+### Phase 4 — Project CRUD
+
+For Phase 4:
+
+- Add project CRUD.
+- Projects must belong to authenticated users.
+- Protect project routes with Better Auth session middleware.
+- Enforce project ownership.
+- Add role-based access where needed.
+
+### Phase 5 — Video Upload
+
+For Phase 5:
+
+- Add video upload.
+- Store uploaded video path or URL.
+- Validate video file type and size.
+- Update project status after upload.
+- Keep actual video processing separate.
+
+### Phase 6 — Processing Jobs
+
+For Phase 6:
+
+- Add processing jobs.
+- Add job status tracking.
+- Use mock processing before real AI.
+- Add `ProcessingJob` model.
+- Add `GeneratedVideo` placeholder model.
+- Add routes for starting, viewing, listing, and cancelling jobs.
+- Do not implement real FFmpeg or Whisper.
+- Do not add FastAPI yet.
+
+### Phase 7 — FastAPI AI Service Foundation
+
+For Phase 7:
+
+- Create the FastAPI AI service under `services/ai-service`.
+- Build only the service foundation.
+- Include a health check endpoint.
+- Include a mock video-processing endpoint.
+- Do not connect Express to FastAPI yet.
+- Do not add real FFmpeg.
+- Do not add Whisper.
+- Do not add real AI/video processing yet.
+
+Required structure:
+
+```txt
+services/ai-service/
+├── requirements.txt
+├── Dockerfile
+├── .env.example
+└── app/
+    ├── main.py
+    ├── api/
+    │   ├── routes/
+    │   │   ├── health.py
+    │   │   └── processing.py
+    │   └── dependencies.py
+    ├── core/
+    │   ├── config.py
+    │   └── logging.py
+    ├── schemas/
+    │   └── processing_schema.py
+    ├── services/
+    │   └── processing_service.py
+    └── utils/
+        └── exceptions.py
+```
+
+Required FastAPI routes:
+
+```txt
+GET  /health
+POST /process-video
+```
+
+The `/process-video` route should accept mock processing input and return mock output metadata.
+
+Example mock response:
+
+```json
+{
+  "success": true,
+  "message": "Mock video processing completed",
+  "data": {
+    "summaryVideo": {
+      "type": "summary",
+      "title": "Generated Summary Video",
+      "outputUrl": "processed/mock-summary.mp4",
+      "durationSeconds": 480,
+      "aspectRatio": "16:9"
+    },
+    "reels": [
+      {
+        "type": "reel",
+        "title": "Generated Reel 1",
+        "outputUrl": "processed/mock-reel-1.mp4",
+        "durationSeconds": 45,
+        "aspectRatio": "9:16"
+      }
+    ]
+  }
+}
+```
+
+### Phase 8 — Express-to-FastAPI Communication
+
+For Phase 8:
+
+- Add internal communication from Express API Gateway to FastAPI AI Service.
+- Create an AI client service inside Express.
+- Add environment variable for FastAPI base URL.
+- Do not replace the mock processing workflow yet unless requested.
+- Do not add real FFmpeg or Whisper.
+
+In Express, create or update:
+
+```txt
+services/api-gateway/src/services/ai-client.service.ts
+```
+
+Recommended environment variable:
+
+```txt
+AI_SERVICE_URL=http://localhost:8000
+```
+
+The AI client should be responsible for calling:
+
+```txt
+POST /process-video
+```
+
+The Express service should not contain AI/video-processing logic.
+
+### Phase 9 — Replace Express Mock Processing with FastAPI Mock Processing
+
+For Phase 9:
+
+- Replace the local Express mock processing simulation with a FastAPI mock processing call.
+- When the user starts processing:
+  - Express creates a `ProcessingJob`.
+  - Express updates the project status to `queued`.
+  - Express calls the FastAPI mock processing endpoint.
+  - Express saves returned mock generated video metadata.
+  - Express updates the job status and project status.
+
+- Keep this mock-based.
+- Do not add real FFmpeg yet.
+- Do not add Whisper yet.
+
+Expected flow:
+
+```txt
+POST /api/projects/:id/process
+→ Express validates project ownership
+→ Express creates ProcessingJob
+→ Express calls FastAPI /process-video
+→ FastAPI returns mock summary/reels
+→ Express saves GeneratedVideo records
+→ Express marks job/project completed
+```
+
+### Phase 10 — FFmpeg Audio Extraction
+
+For Phase 10:
+
+- Add real FFmpeg support inside the FastAPI AI Service.
+- Extract audio from uploaded video files.
+- Do not add Whisper transcription yet.
+- Keep output as an extracted `.wav` or `.mp3` file.
+- Isolate FFmpeg commands in utility functions.
+
+Add or update:
+
+```txt
+services/ai-service/app/utils/ffmpeg_utils.py
+services/ai-service/app/services/audio_service.py
+```
+
+Required behavior:
+
+```txt
+input video → extracted audio file
+```
+
+### Phase 11 — Whisper Transcription
+
+For Phase 11:
+
+- Add faster-whisper or Whisper transcription inside the FastAPI AI Service.
+- Use extracted audio from Phase 10.
+- Generate timestamped transcript output.
+- Save transcript as JSON.
+- Do not generate highlights yet.
+
+Add or update:
+
+```txt
+services/ai-service/app/services/transcription_service.py
+services/ai-service/app/schemas/transcript_schema.py
+```
+
+Required output:
+
+```txt
+transcript.json
+```
+
+Each transcript segment should include:
+
+```txt
+start
+end
+text
+confidence if available
+```
+
+### Phase 12 — Transcript Segmentation
+
+For Phase 12:
+
+- Convert timestamped transcript into logical segments.
+- Start with simple fixed-window or sentence-based segmentation.
+- Segment size should usually be 30–60 seconds.
+- Do not add advanced ML highlight detection yet.
+
+Add or update:
+
+```txt
+services/ai-service/app/algorithms/segmenter.py
+```
+
+Each segment should include:
+
+```txt
+startTime
+endTime
+text
+wordCount
+```
+
+### Phase 13 — Basic Highlight Scoring
+
+For Phase 13:
+
+- Add a simple rule-based highlight scoring algorithm.
+- Use transcript signals first.
+- Do not add complex ML models yet.
+
+Add or update:
+
+```txt
+services/ai-service/app/algorithms/highlight_scoring.py
+```
+
+Score based on:
+
+- Strong hook phrases
+- Questions
+- Numbered tips
+- Important statements
+- Summary/conclusion phrases
+- High information density
+- Emotional or opinionated language
+
+Each highlight candidate should include:
+
+```txt
+startTime
+endTime
+score
+reason
+text
+```
+
+### Phase 14 — Summary Clip Generation
+
+For Phase 14:
+
+- Generate a 7–10 minute summary video using selected highlight segments.
+- Use FFmpeg to cut and concatenate clips.
+- Prefer coherence and coverage over only highest score.
+- Do not add advanced captions yet.
+- Do not add vertical reels yet.
+
+Required behavior:
+
+```txt
+original video + selected segments → summary.mp4
+```
+
+### Phase 15 — Reel Clip Generation
+
+For Phase 15:
+
+- Generate multiple short reel clips from top highlight candidates.
+- Clips should be self-contained.
+- Recommended duration: 20–60 seconds.
+- Use FFmpeg to cut clips.
+- Do not add smart vertical reframing yet.
+- Center crop is acceptable initially.
+
+Required behavior:
+
+```txt
+original video + highlight timestamps → reel-1.mp4, reel-2.mp4, reel-3.mp4
+```
+
+### Phase 16 — Captions
+
+For Phase 16:
+
+- Generate captions from transcript timestamps.
+- Export captions as `.srt` and/or `.vtt`.
+- Optionally burn captions into generated videos using FFmpeg.
+- Keep caption styling simple first.
+
+Required outputs:
+
+```txt
+summary.srt
+reel-1.srt
+reel-2.srt
+```
+
+### Phase 17 — Vertical Formatting
+
+For Phase 17:
+
+- Format reels for vertical 9:16 output.
+- Start with center crop.
+- Later improve with face/person tracking.
+- Use FFmpeg for crop and scale.
+
+Required output:
+
+```txt
+vertical reel mp4 files, 9:16 aspect ratio
+```
+
+### Phase 18 — Templates, Publishing, Analytics, and Admin Tools
+
+For Phase 18:
+
+- Add branding templates.
+- Add caption styles.
+- Add publish scheduling.
+- Add analytics.
+- Add admin controls.
+- Only build these after the core processing pipeline works end-to-end.
+
 ## Testing Rules
 
 When adding backend features:
@@ -753,11 +1276,11 @@ When adding backend features:
 
 For Express:
 
-- Use Jest or Vitest with Supertest if tests are requested.
+- Use Jest or Vitest with Supertest.
 
 For FastAPI:
 
-- Use pytest and FastAPI TestClient if tests are requested.
+- Use pytest and FastAPI TestClient.
 
 ## Documentation Rules
 
@@ -799,8 +1322,8 @@ Do not:
 
 - Add frontend code
 - Add payment features
-- Add social media publishing
-- Add complex AI models
+- Add social media publishing before the core pipeline works
+- Add complex AI models before the MVP rule-based pipeline works
 - Add Kubernetes
 - Add cloud deployment config
 - Add unnecessary abstractions
@@ -808,3 +1331,5 @@ Do not:
 - Change the product name from RepurposePro
 - Replace Better Auth with custom JWT authentication unless explicitly requested
 - Remove Arcjet once it is added unless explicitly requested
+- Store video files directly in PostgreSQL
+- Expose the FastAPI AI Service directly to frontend users
