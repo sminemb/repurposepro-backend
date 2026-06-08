@@ -3,6 +3,8 @@ import "dotenv/config";
 const DEFAULT_PORT = 5000;
 const DEFAULT_UPLOAD_DIR = "storage/uploads";
 const DEFAULT_MAX_UPLOAD_SIZE_MB = 2048;
+const DEFAULT_AI_SERVICE_URL = "http://localhost:8000";
+const DEFAULT_AI_SERVICE_TIMEOUT_MS = 30_000;
 
 const requireEnv = (name: string): string => {
   const value = process.env[name]?.trim();
@@ -85,5 +87,11 @@ export const env = {
     "MAX_UPLOAD_SIZE_MB",
     process.env.MAX_UPLOAD_SIZE_MB,
     DEFAULT_MAX_UPLOAD_SIZE_MB,
+  ),
+  aiServiceUrl: process.env.AI_SERVICE_URL?.trim() || DEFAULT_AI_SERVICE_URL,
+  aiServiceTimeoutMs: parsePositiveInteger(
+    "AI_SERVICE_TIMEOUT_MS",
+    process.env.AI_SERVICE_TIMEOUT_MS,
+    DEFAULT_AI_SERVICE_TIMEOUT_MS,
   ),
 } as const;
