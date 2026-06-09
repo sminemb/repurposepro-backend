@@ -3,10 +3,10 @@
 RepurposePro is an AI-powered video repurposing platform designed to turn
 long-form videos into summary videos and short vertical reels.
 
-This repository currently contains the Express.js API Gateway through Phase 6
-of the backend roadmap. It includes authentication, API protection, project
-management, local video uploads, and mock processing jobs. Real AI and video
-processing are not implemented yet.
+This repository currently contains the Express.js API Gateway and internal
+FastAPI AI service through Phase 9 of the backend roadmap. Express coordinates
+mock asynchronous processing through FastAPI and owns all business data. Real
+AI and video processing are not implemented yet.
 
 ## Current Features
 
@@ -16,7 +16,8 @@ processing are not implemented yet.
 - Arcjet bot protection, shield rules, and route-level rate limiting
 - Authenticated project CRUD with ownership enforcement
 - Local video uploads for `.mp4`, `.mov`, `.mkv`, and `.webm` files
-- Mock asynchronous video-processing jobs with progress tracking
+- FastAPI-backed mock asynchronous video-processing jobs with progress tracking
+- Generated summary and reel metadata persisted by the API Gateway
 - Consistent validation, error handling, and API responses
 - Vitest and Supertest integration tests
 
@@ -27,22 +28,28 @@ repurposepro-backend/
 ├── AGENTS.md
 ├── README.md
 └── services/
-    └── api-gateway/
+    ├── api-gateway/
         ├── prisma/
         ├── src/
         ├── storage/uploads/
         ├── .env.example
         ├── Dockerfile
         └── package.json
+    └── ai-service/
+        ├── app/
+        ├── .env.example
+        ├── Dockerfile
+        └── requirements.txt
 ```
 
-The FastAPI AI service will be added in a later phase. Frontend applications
-should communicate only with the API Gateway.
+Frontend applications should communicate only with the API Gateway. The
+FastAPI AI service is internal and runs at `http://localhost:8000` by default.
 
 ## Prerequisites
 
 - Node.js 22 or later
 - npm
+- Python 3.11 or later
 - A Neon Postgres database, or another PostgreSQL database for local
   development
 - An Arcjet key if API protection should be enabled locally
@@ -83,10 +90,22 @@ should communicate only with the API Gateway.
    npm run dev
    ```
 
-The API Gateway runs at `http://localhost:5000` by default. Check it with:
+6. In another terminal, install and start the internal AI service:
+
+   ```bash
+   cd services/ai-service
+   python -m venv .venv
+   .venv\Scripts\Activate.ps1
+   pip install -r requirements.txt
+   uvicorn app.main:app --reload --port 8000
+   ```
+
+The API Gateway runs at `http://localhost:5000` and the internal AI service
+runs at `http://localhost:8000` by default. Check them with:
 
 ```bash
 curl http://localhost:5000/api/health
+curl http://localhost:8000/health
 ```
 
 ## Environment Variables
@@ -109,6 +128,9 @@ ARCJET_ENV=development
 
 UPLOAD_DIR=storage/uploads
 MAX_UPLOAD_SIZE_MB=2048
+
+AI_SERVICE_URL=http://localhost:8000
+AI_SERVICE_TIMEOUT_MS=30000
 ```
 
 | Variable | Description |
@@ -122,6 +144,8 @@ MAX_UPLOAD_SIZE_MB=2048
 | `ARCJET_ENV` | Arcjet mode: `development` or `production` |
 | `UPLOAD_DIR` | Local upload directory, relative to the API Gateway |
 | `MAX_UPLOAD_SIZE_MB` | Maximum accepted video upload size in megabytes |
+| `AI_SERVICE_URL` | Internal FastAPI AI service base URL |
+| `AI_SERVICE_TIMEOUT_MS` | Timeout for internal AI service requests |
 
 Do not commit `.env` files or credentials.
 
@@ -141,7 +165,7 @@ response shape.
 | `PATCH` | `/api/projects/:id` | Update a project |
 | `DELETE` | `/api/projects/:id` | Delete a project |
 | `POST` | `/api/projects/:id/upload` | Upload a project video |
-| `POST` | `/api/projects/:id/process` | Start a mock processing job |
+| `POST` | `/api/projects/:id/process` | Start a FastAPI-backed mock processing job |
 | `GET` | `/api/jobs/:id` | Get a processing job |
 | `GET` | `/api/projects/:id/jobs` | List a project's jobs |
 | `POST` | `/api/jobs/:id/cancel` | Cancel a queued or processing job |
@@ -187,13 +211,15 @@ default. The original filename is not used as the stored filename.
 
 ## Mock Processing
 
-Starting processing creates a database-backed job and runs a temporary
-timer-based mock workflow. The job moves through mock preparation,
-transcription, highlight detection, and generation steps before completing.
+Starting processing creates a queued database-backed job and launches a
+temporary in-process background runner. Express calls FastAPI's mock
+`POST /process-video` endpoint, replaces the project's old generated-video
+metadata with the returned summary and reels, and completes the job.
 
-This implementation does not run FFmpeg, transcribe audio, or generate output
-videos. A later phase will replace it with the internal FastAPI AI service and
-background workers.
+Cancellation updates the database job but does not stop an in-flight FastAPI
+request yet. The runner checks job status before saving results. This
+implementation does not run FFmpeg, transcribe audio, or generate real output
+files. A later phase will replace the in-process runner with durable workers.
 
 ## Available Commands
 
@@ -205,7 +231,6 @@ npm run build           # Compile TypeScript
 npm start               # Run the compiled server
 npm run lint            # Run ESLint
 npm test                # Run all tests
-npm run test:phase1-6   # Run the Phase 1-6 integration suite
 npm run prisma:generate # Generate the Prisma client
 npm run prisma:migrate  # Apply development migrations
 npm run prisma:studio   # Open Prisma Studio
@@ -223,7 +248,6 @@ npm test
 
 ## Roadmap
 
-The next planned phase is the FastAPI AI Service foundation. Later phases will
-connect Express to FastAPI, add FFmpeg audio extraction, transcription,
-highlight scoring, summary generation, reel generation, captions, and vertical
-formatting.
+The next planned phase is notifications. Later phases will add FFmpeg audio
+extraction, transcription, highlight scoring, summary generation, reel
+generation, captions, and vertical formatting.

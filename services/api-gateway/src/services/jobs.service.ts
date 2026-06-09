@@ -53,20 +53,38 @@ export const startProjectProcessing = async (
   }
 
   return prisma.$transaction(async (transaction) => {
-    const job = await transaction.processingJob.create({
-      data: {
-        projectId: project.id,
-        status: ProcessingJobStatus.queued,
-        progress: 0,
-      },
-    });
-
+    // Updating first locks the project row so concurrent starts serialize.
     await transaction.project.update({
       where: {
         id: project.id,
       },
       data: {
         status: ProjectStatus.queued,
+      },
+    });
+
+    const activeJob = await transaction.processingJob.findFirst({
+      where: {
+        projectId: project.id,
+        status: {
+          in: activeJobStatuses,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (activeJob !== null) {
+      throw new AppError("Project already has an active processing job", 409);
+    }
+
+    const job = await transaction.processingJob.create({
+      data: {
+        projectId: project.id,
+        status: ProcessingJobStatus.queued,
+        progress: 0,
+        currentStep: "Queued for processing",
       },
     });
 

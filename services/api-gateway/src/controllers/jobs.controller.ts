@@ -7,13 +7,14 @@ import {
   getJobsByProjectForUser,
   startProjectProcessing,
 } from "../services/jobs.service.js";
-import { runMockProcessingJob } from "../services/mock-processing.service.js";
+import { runAiProcessingJob } from "../services/job-processing.service.js";
 import type {
   JobIdParams,
   ListProjectJobsQuery,
   ProjectJobIdParams,
 } from "../validators/job.validator.js";
 import { AppError } from "../utils/errors.js";
+import { logger } from "../utils/logger.js";
 import { sendSuccess } from "../utils/response.js";
 
 const userRoles = new Set<UserRole>(["admin", "creator", "editor"]);
@@ -46,7 +47,10 @@ export const startProjectProcessingController: RequestHandler = async (
       throw new AppError("Project not found", 404);
     }
 
-    void runMockProcessingJob(job.id);
+    // A durable queue will replace this in-process launch in a later phase.
+    void runAiProcessingJob(job.id).catch((error: unknown) => {
+      logger.error(`Unhandled background processing error: ${job.id}`, error);
+    });
 
     sendSuccess(response, "Processing job started successfully", job, 201);
   } catch (error) {

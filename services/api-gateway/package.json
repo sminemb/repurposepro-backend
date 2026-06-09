@@ -9,7 +9,6 @@
     "start": "node dist/server.js",
     "lint": "eslint src",
     "test": "vitest run src/tests --no-file-parallelism",
-    "test:phase1-6": "vitest run src/tests/phases-1-6.integration.test.ts --no-file-parallelism",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"
