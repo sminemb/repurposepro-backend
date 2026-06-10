@@ -49,18 +49,27 @@ enum GeneratedVideoStatus {
   failed
 }
 
+enum NotificationType {
+  video_uploaded
+  processing_started
+  processing_completed
+  processing_failed
+  generated_video_ready
+}
+
 model User {
-  id            String    @id
+  id            String         @id
   name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
+  email         String         @unique
+  emailVerified Boolean        @default(false)
   image         String?
-  role          UserRole  @default(creator)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  role          UserRole       @default(creator)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   sessions      Session[]
   accounts      Account[]
   projects      Project[]
+  notifications Notification[]
 
   @@map("user")
 }
@@ -117,6 +126,24 @@ model GeneratedVideo {
 
   @@index([projectId])
   @@map("generated_video")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  metadata  Json?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
 }
 
 model Session {

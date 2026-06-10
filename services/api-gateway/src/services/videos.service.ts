@@ -3,6 +3,7 @@ import path from "node:path";
 import { ProjectStatus, type Project, type UserRole } from "@prisma/client";
 
 import { prisma } from "../lib/prisma.js";
+import { createVideoUploadedNotification } from "./notifications.service.js";
 
 const canUploadToAnyProject = (role: UserRole): boolean => role === "admin";
 
@@ -30,7 +31,7 @@ export const uploadProjectVideo = async (
     return null;
   }
 
-  return prisma.project.update({
+  const updatedProject = await prisma.project.update({
     where: {
       id: existingProject.id,
     },
@@ -39,4 +40,12 @@ export const uploadProjectVideo = async (
       status: ProjectStatus.uploaded,
     },
   });
+
+  await createVideoUploadedNotification(
+    existingProject.userId,
+    existingProject.id,
+    existingProject.title,
+  );
+
+  return updatedProject;
 };

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  createGeneratedVideoReadyNotification: vi.fn(),
+  createProcessingCompletedNotification: vi.fn(),
+  createProcessingFailedNotification: vi.fn(),
+  createProcessingStartedNotification: vi.fn(),
   processVideoWithAiService: vi.fn(),
   prisma: {
     processingJob: {
@@ -16,6 +20,16 @@ vi.mock("../lib/prisma.js", () => ({
 
 vi.mock("../services/ai-client.service.js", () => ({
   processVideoWithAiService: mocks.processVideoWithAiService,
+}));
+
+vi.mock("../services/notifications.service.js", () => ({
+  createGeneratedVideoReadyNotification:
+    mocks.createGeneratedVideoReadyNotification,
+  createProcessingCompletedNotification:
+    mocks.createProcessingCompletedNotification,
+  createProcessingFailedNotification: mocks.createProcessingFailedNotification,
+  createProcessingStartedNotification:
+    mocks.createProcessingStartedNotification,
 }));
 
 const { runAiProcessingJob } = await import(
@@ -52,11 +66,17 @@ const runnableJob = {
   status: "queued",
   project: {
     originalVideoUrl: "storage/uploads/source.mp4",
+    title: "Test Project",
+    userId: "user-1",
   },
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.createGeneratedVideoReadyNotification.mockResolvedValue(undefined);
+  mocks.createProcessingCompletedNotification.mockResolvedValue(undefined);
+  mocks.createProcessingFailedNotification.mockResolvedValue(undefined);
+  mocks.createProcessingStartedNotification.mockResolvedValue(undefined);
 });
 
 describe("runAiProcessingJob", () => {
@@ -136,6 +156,23 @@ describe("runAiProcessingJob", () => {
         status: "completed",
       },
     });
+    expect(mocks.createProcessingStartedNotification).toHaveBeenCalledWith(
+      "user-1",
+      "project-1",
+      "Test Project",
+      "job-1",
+    );
+    expect(mocks.createGeneratedVideoReadyNotification).toHaveBeenCalledWith(
+      "user-1",
+      "project-1",
+      "Test Project",
+    );
+    expect(mocks.createProcessingCompletedNotification).toHaveBeenCalledWith(
+      "user-1",
+      "project-1",
+      "Test Project",
+      "job-1",
+    );
   });
 
   test("marks the job and project failed when FastAPI fails", async () => {
@@ -150,7 +187,13 @@ describe("runAiProcessingJob", () => {
 
     mocks.prisma.processingJob.findUnique
       .mockResolvedValueOnce(runnableJob)
-      .mockResolvedValueOnce({ projectId: "project-1" });
+      .mockResolvedValueOnce({
+        projectId: "project-1",
+        project: {
+          title: "Test Project",
+          userId: "user-1",
+        },
+      });
     mocks.prisma.$transaction.mockImplementation(
       async (callback: (client: typeof transaction) => Promise<unknown>) =>
         callback(transaction),
@@ -183,6 +226,13 @@ describe("runAiProcessingJob", () => {
         status: "failed",
       },
     });
+    expect(mocks.createProcessingFailedNotification).toHaveBeenCalledWith(
+      "user-1",
+      "project-1",
+      "Test Project",
+      "job-1",
+      "AI service is unavailable",
+    );
   });
 
   test("does not save results when cancellation wins the completion race", async () => {

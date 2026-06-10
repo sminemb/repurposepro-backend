@@ -5,6 +5,12 @@ import { AppError } from "../utils/errors.js";
 import { logger } from "../utils/logger.js";
 import { processVideoWithAiService } from "./ai-client.service.js";
 import { replaceGeneratedVideosFromAiResult } from "./generated-videos.service.js";
+import {
+  createGeneratedVideoReadyNotification,
+  createProcessingCompletedNotification,
+  createProcessingFailedNotification,
+  createProcessingStartedNotification,
+} from "./notifications.service.js";
 
 const activeJobStatuses: ProcessingJobStatus[] = [
   ProcessingJobStatus.queued,
@@ -23,6 +29,12 @@ const markJobFailed = async (jobId: string, error: unknown): Promise<void> => {
     },
     select: {
       projectId: true,
+      project: {
+        select: {
+          title: true,
+          userId: true,
+        },
+      },
     },
   });
 
@@ -30,7 +42,7 @@ const markJobFailed = async (jobId: string, error: unknown): Promise<void> => {
     return;
   }
 
-  await prisma.$transaction(async (transaction) => {
+  const jobFailed = await prisma.$transaction(async (transaction) => {
     const failedJobUpdate = await transaction.processingJob.updateMany({
       where: {
         id: jobId,
@@ -47,7 +59,7 @@ const markJobFailed = async (jobId: string, error: unknown): Promise<void> => {
     });
 
     if (failedJobUpdate.count === 0) {
-      return;
+      return false;
     }
 
     await transaction.project.update({
@@ -58,7 +70,19 @@ const markJobFailed = async (jobId: string, error: unknown): Promise<void> => {
         status: ProjectStatus.failed,
       },
     });
+
+    return true;
   });
+
+  if (jobFailed) {
+    await createProcessingFailedNotification(
+      job.project.userId,
+      job.projectId,
+      job.project.title,
+      jobId,
+      getCleanErrorMessage(error),
+    );
+  }
 };
 
 // Temporary in-process Phase 9 runner. Redis/BullMQ or an equivalent durable
@@ -76,6 +100,8 @@ export const runAiProcessingJob = async (jobId: string): Promise<void> => {
         project: {
           select: {
             originalVideoUrl: true,
+            title: true,
+            userId: true,
           },
         },
       },
@@ -135,6 +161,13 @@ export const runAiProcessingJob = async (jobId: string): Promise<void> => {
       return;
     }
 
+    await createProcessingStartedNotification(
+      job.project.userId,
+      job.projectId,
+      job.project.title,
+      job.id,
+    );
+
     const aiResponse = await processVideoWithAiService({
       jobId: job.id,
       projectId: job.projectId,
@@ -142,7 +175,7 @@ export const runAiProcessingJob = async (jobId: string): Promise<void> => {
       requestedOutputs: ["summary", "reels"],
     });
 
-    await prisma.$transaction(async (transaction) => {
+    const processingCompleted = await prisma.$transaction(async (transaction) => {
       const completionUpdate = await transaction.processingJob.updateMany({
         where: {
           id: job.id,
@@ -157,7 +190,7 @@ export const runAiProcessingJob = async (jobId: string): Promise<void> => {
       });
 
       if (completionUpdate.count === 0) {
-        return;
+        return false;
       }
 
       await replaceGeneratedVideosFromAiResult(
@@ -174,7 +207,25 @@ export const runAiProcessingJob = async (jobId: string): Promise<void> => {
           status: ProjectStatus.completed,
         },
       });
+
+      return true;
     });
+
+    if (processingCompleted) {
+      await Promise.all([
+        createGeneratedVideoReadyNotification(
+          job.project.userId,
+          job.projectId,
+          job.project.title,
+        ),
+        createProcessingCompletedNotification(
+          job.project.userId,
+          job.projectId,
+          job.project.title,
+          job.id,
+        ),
+      ]);
+    }
   } catch (error) {
     try {
       await markJobFailed(jobId, error);
