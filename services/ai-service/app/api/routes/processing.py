@@ -1,9 +1,13 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.dependencies import require_internal_api_key
 from app.schemas.processing_schema import ApiResponse, ProcessVideoRequest
 from app.services.processing_service import process_video_mock
 
-router = APIRouter(tags=["processing"])
+router = APIRouter(
+    tags=["processing"],
+    dependencies=[Depends(require_internal_api_key)],
+)
 
 
 @router.post("/process-video", response_model=ApiResponse)

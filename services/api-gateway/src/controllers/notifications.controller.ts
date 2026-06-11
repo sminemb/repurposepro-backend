@@ -1,6 +1,6 @@
-import type { Request, RequestHandler } from "express";
-import type { UserRole } from "@prisma/client";
+import type { RequestHandler } from "express";
 
+import { getAuthenticatedUserId } from "../middlewares/auth.middleware.js";
 import {
   getNotificationsForUser,
   getUnreadCountForUser,
@@ -14,29 +14,13 @@ import type {
   NotificationIdParams,
 } from "../validators/notification.validator.js";
 
-const userRoles = new Set<UserRole>(["admin", "creator", "editor"]);
-
-const isUserRole = (value: unknown): value is UserRole =>
-  typeof value === "string" && userRoles.has(value as UserRole);
-
-const getAuthContext = (request: Request): { userId: string; role: UserRole } => {
-  if (request.auth === undefined) {
-    throw new AppError("Authentication required", 401);
-  }
-
-  return {
-    userId: request.auth.user.id,
-    role: isUserRole(request.auth.user.role) ? request.auth.user.role : "creator",
-  };
-};
-
 export const listNotificationsController: RequestHandler = async (
   request,
   response,
   next,
 ) => {
   try {
-    const { userId } = getAuthContext(request);
+    const userId = getAuthenticatedUserId(request);
     const filters = request.validatedQuery as ListNotificationsQuery;
     const notifications = await getNotificationsForUser(userId, filters);
 
@@ -56,7 +40,7 @@ export const getUnreadNotificationCountController: RequestHandler = async (
   next,
 ) => {
   try {
-    const { userId } = getAuthContext(request);
+    const userId = getAuthenticatedUserId(request);
     const count = await getUnreadCountForUser(userId);
 
     sendSuccess(
@@ -77,9 +61,9 @@ export const markNotificationAsReadController: RequestHandler = async (
   next,
 ) => {
   try {
-    const { userId, role } = getAuthContext(request);
+    const userId = getAuthenticatedUserId(request);
     const { id } = request.params as NotificationIdParams;
-    const notification = await markNotificationAsRead(id, userId, role);
+    const notification = await markNotificationAsRead(id, userId);
 
     if (notification === null) {
       throw new AppError("Notification not found", 404);
@@ -101,7 +85,7 @@ export const markAllNotificationsAsReadController: RequestHandler = async (
   next,
 ) => {
   try {
-    const { userId } = getAuthContext(request);
+    const userId = getAuthenticatedUserId(request);
     const updatedCount = await markAllNotificationsAsRead(userId);
 
     sendSuccess(response, "All notifications marked as read successfully", {

@@ -40,34 +40,71 @@ export interface AiServiceHealthResponse {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
+const isBoundedString = (value: unknown, maxLength: number): value is string =>
+  typeof value === "string" &&
+  value.trim().length > 0 &&
+  value.length <= maxLength;
+
+const isSafeRelativeAssetPath = (value: unknown): value is string => {
+  if (
+    !isBoundedString(value, 2_048) ||
+    value.includes("\\") ||
+    value.startsWith("/") ||
+    /^[a-z][a-z\d+.-]*:/i.test(value)
+  ) {
+    return false;
+  }
+
+  const segments = value.split("/");
+
+  return segments.every(
+    (segment) => segment.length > 0 && segment !== "." && segment !== "..",
+  );
+};
+
 const isGeneratedVideoOutput = (
   value: unknown,
 ): value is AiGeneratedVideoOutput =>
   isRecord(value) &&
   (value.type === "summary" || value.type === "reel") &&
-  typeof value.title === "string" &&
-  typeof value.outputUrl === "string" &&
-  typeof value.durationSeconds === "number" &&
-  typeof value.aspectRatio === "string";
+  isBoundedString(value.title, 200) &&
+  isSafeRelativeAssetPath(value.outputUrl) &&
+  value.outputUrl.endsWith(".mp4") &&
+  Number.isInteger(value.durationSeconds) &&
+  (value.durationSeconds as number) > 0 &&
+  (value.durationSeconds as number) <= 7_200 &&
+  (value.aspectRatio === "16:9" || value.aspectRatio === "9:16");
 
 const isProcessVideoResponse = (
   value: unknown,
+  projectId: string,
 ): value is AiProcessVideoResponse =>
   isRecord(value) &&
   typeof value.success === "boolean" &&
-  typeof value.message === "string" &&
+  isBoundedString(value.message, 500) &&
   isRecord(value.data) &&
   isGeneratedVideoOutput(value.data.summaryVideo) &&
+  value.data.summaryVideo.type === "summary" &&
+  value.data.summaryVideo.aspectRatio === "16:9" &&
+  value.data.summaryVideo.outputUrl.startsWith(`processed/${projectId}/`) &&
   Array.isArray(value.data.reels) &&
-  value.data.reels.every(isGeneratedVideoOutput);
+  value.data.reels.length > 0 &&
+  value.data.reels.length <= 100 &&
+  value.data.reels.every(
+    (output) =>
+      isGeneratedVideoOutput(output) &&
+      output.type === "reel" &&
+      output.aspectRatio === "9:16" &&
+      output.outputUrl.startsWith(`processed/${projectId}/`),
+  );
 
 const isHealthResponse = (value: unknown): value is AiServiceHealthResponse =>
   isRecord(value) &&
   typeof value.success === "boolean" &&
-  typeof value.message === "string" &&
+  isBoundedString(value.message, 500) &&
   isRecord(value.data) &&
-  typeof value.data.service === "string" &&
-  typeof value.data.status === "string";
+  isBoundedString(value.data.service, 100) &&
+  isBoundedString(value.data.status, 100);
 
 const getAiServiceUrl = (path: string): string =>
   `${env.aiServiceUrl.replace(/\/+$/, "")}${path}`;
@@ -118,6 +155,12 @@ export const checkAiServiceHealth =
   async (): Promise<AiServiceHealthResponse> => {
     const response = await requestAiService("/health", {
       method: "GET",
+      headers:
+        env.aiServiceApiKey === undefined
+          ? undefined
+          : {
+              "X-Internal-API-Key": env.aiServiceApiKey,
+            },
     });
 
     if (
@@ -138,11 +181,16 @@ export const processVideoWithAiService = async (
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(env.aiServiceApiKey === undefined
+        ? {}
+        : {
+            "X-Internal-API-Key": env.aiServiceApiKey,
+          }),
     },
     body: JSON.stringify(input),
   });
 
-  if (!isProcessVideoResponse(response)) {
+  if (!isProcessVideoResponse(response, input.projectId)) {
     throw new AppError("AI service returned an invalid processing response", 502);
   }
 

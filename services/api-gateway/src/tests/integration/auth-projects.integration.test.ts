@@ -62,6 +62,7 @@ describe("RepurposePro health, auth, and project API", () => {
           },
         },
       });
+      expect(response.body.data.session).toBeUndefined();
     },
     INTEGRATION_TEST_TIMEOUT_MS,
   );

@@ -1,12 +1,10 @@
-import type { Prisma, Project, UserRole } from "@prisma/client";
+import type { Prisma, Project } from "@prisma/client";
 
 import type {
   CreateProjectInput,
   UpdateProjectInput,
 } from "../validators/project.validator.js";
 import { prisma } from "../lib/prisma.js";
-
-const canAccessAllProjects = (role: UserRole): boolean => role === "admin";
 
 export const createProject = async (
   userId: string,
@@ -23,10 +21,9 @@ export const createProject = async (
 
 export const getProjectsByUser = async (
   userId: string,
-  role?: UserRole,
 ): Promise<Project[]> =>
   prisma.project.findMany({
-    where: role !== undefined && canAccessAllProjects(role) ? undefined : { userId },
+    where: { userId },
     orderBy: {
       createdAt: "desc",
     },
@@ -35,26 +32,20 @@ export const getProjectsByUser = async (
 export const getProjectByIdForUser = async (
   projectId: string,
   userId: string,
-  role: UserRole,
 ): Promise<Project | null> =>
   prisma.project.findFirst({
-    where: canAccessAllProjects(role)
-      ? {
-          id: projectId,
-        }
-      : {
-          id: projectId,
-          userId,
-        },
+    where: {
+      id: projectId,
+      userId,
+    },
   });
 
 export const updateProject = async (
   projectId: string,
   userId: string,
-  role: UserRole,
   input: UpdateProjectInput,
 ): Promise<Project | null> => {
-  const existingProject = await getProjectByIdForUser(projectId, userId, role);
+  const existingProject = await getProjectByIdForUser(projectId, userId);
 
   if (existingProject === null) {
     return null;
@@ -85,9 +76,8 @@ export const updateProject = async (
 export const deleteProject = async (
   projectId: string,
   userId: string,
-  role: UserRole,
 ): Promise<Project | null> => {
-  const existingProject = await getProjectByIdForUser(projectId, userId, role);
+  const existingProject = await getProjectByIdForUser(projectId, userId);
 
   if (existingProject === null) {
     return null;

@@ -1,6 +1,6 @@
-import type { Request, RequestHandler } from "express";
-import type { UserRole } from "@prisma/client";
+import type { RequestHandler } from "express";
 
+import { getAuthenticatedUserId } from "../middlewares/auth.middleware.js";
 import {
   createProject,
   deleteProject,
@@ -16,30 +16,17 @@ import type {
 import { AppError } from "../utils/errors.js";
 import { sendSuccess } from "../utils/response.js";
 
-const userRoles = new Set<UserRole>(["admin", "creator", "editor"]);
-
-const isUserRole = (value: unknown): value is UserRole =>
-  typeof value === "string" && userRoles.has(value as UserRole);
-
-const getAuthContext = (request: Request): { userId: string; role: UserRole } => {
-  if (request.auth === undefined) {
-    throw new AppError("Authentication required", 401);
-  }
-
-  return {
-    userId: request.auth.user.id,
-    role: isUserRole(request.auth.user.role) ? request.auth.user.role : "creator",
-  };
-};
-
 export const createProjectController: RequestHandler = async (
   request,
   response,
   next,
 ) => {
   try {
-    const { userId } = getAuthContext(request);
-    const project = await createProject(userId, request.body as CreateProjectInput);
+    const userId = getAuthenticatedUserId(request);
+    const project = await createProject(
+      userId,
+      request.body as CreateProjectInput,
+    );
 
     sendSuccess(response, "Project created successfully", project, 201);
   } catch (error) {
@@ -53,8 +40,8 @@ export const listProjectsController: RequestHandler = async (
   next,
 ) => {
   try {
-    const { userId, role } = getAuthContext(request);
-    const projects = await getProjectsByUser(userId, role);
+    const userId = getAuthenticatedUserId(request);
+    const projects = await getProjectsByUser(userId);
 
     sendSuccess(response, "Projects retrieved successfully", projects);
   } catch (error) {
@@ -68,9 +55,9 @@ export const getProjectController: RequestHandler = async (
   next,
 ) => {
   try {
-    const { userId, role } = getAuthContext(request);
+    const userId = getAuthenticatedUserId(request);
     const { id } = request.params as ProjectIdParams;
-    const project = await getProjectByIdForUser(id, userId, role);
+    const project = await getProjectByIdForUser(id, userId);
 
     if (project === null) {
       throw new AppError("Project not found", 404);
@@ -88,12 +75,11 @@ export const updateProjectController: RequestHandler = async (
   next,
 ) => {
   try {
-    const { userId, role } = getAuthContext(request);
+    const userId = getAuthenticatedUserId(request);
     const { id } = request.params as ProjectIdParams;
     const project = await updateProject(
       id,
       userId,
-      role,
       request.body as UpdateProjectInput,
     );
 
@@ -113,9 +99,9 @@ export const deleteProjectController: RequestHandler = async (
   next,
 ) => {
   try {
-    const { userId, role } = getAuthContext(request);
+    const userId = getAuthenticatedUserId(request);
     const { id } = request.params as ProjectIdParams;
-    const project = await deleteProject(id, userId, role);
+    const project = await deleteProject(id, userId);
 
     if (project === null) {
       throw new AppError("Project not found", 404);

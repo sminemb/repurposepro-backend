@@ -2,7 +2,6 @@ import {
   ProcessingJobStatus,
   ProjectStatus,
   type ProcessingJob,
-  type UserRole,
 } from "@prisma/client";
 
 import { prisma } from "../lib/prisma.js";
@@ -17,25 +16,15 @@ const activeJobStatuses: ProcessingJobStatus[] = [
   ProcessingJobStatus.processing,
 ];
 
-const canAccessAllJobs = (role: UserRole): boolean => role === "admin";
-
-const getProjectAccessFilter = (projectId: string, userId: string, role: UserRole) =>
-  canAccessAllJobs(role)
-    ? {
-        id: projectId,
-      }
-    : {
-        id: projectId,
-        userId,
-      };
-
 export const startProjectProcessing = async (
   projectId: string,
   userId: string,
-  role: UserRole,
 ): Promise<ProcessingJob | null> => {
   const project = await prisma.project.findFirst({
-    where: getProjectAccessFilter(projectId, userId, role),
+    where: {
+      id: projectId,
+      userId,
+    },
   });
 
   if (project === null) {
@@ -95,29 +84,26 @@ export const startProjectProcessing = async (
 export const getJobByIdForUser = async (
   jobId: string,
   userId: string,
-  role: UserRole,
 ): Promise<ProcessingJob | null> =>
   prisma.processingJob.findFirst({
-    where: canAccessAllJobs(role)
-      ? {
-          id: jobId,
-        }
-      : {
-          id: jobId,
-          project: {
-            userId,
-          },
-        },
+    where: {
+      id: jobId,
+      project: {
+        userId,
+      },
+    },
   });
 
 export const getJobsByProjectForUser = async (
   projectId: string,
   userId: string,
-  role: UserRole,
   filters: JobFilters = {},
 ): Promise<ProcessingJob[] | null> => {
   const project = await prisma.project.findFirst({
-    where: getProjectAccessFilter(projectId, userId, role),
+    where: {
+      id: projectId,
+      userId,
+    },
     select: {
       id: true,
     },
@@ -141,9 +127,8 @@ export const getJobsByProjectForUser = async (
 export const cancelJob = async (
   jobId: string,
   userId: string,
-  role: UserRole,
 ): Promise<ProcessingJob | null> => {
-  const job = await getJobByIdForUser(jobId, userId, role);
+  const job = await getJobByIdForUser(jobId, userId);
 
   if (job === null) {
     return null;
@@ -153,6 +138,8 @@ export const cancelJob = async (
     throw new AppError("Only queued or processing jobs can be cancelled", 409);
   }
 
+  // The Phase 9 in-process runner cannot abort an active HTTP request. This
+  // status guard prevents cancelled jobs from saving later AI results.
   return prisma.$transaction(async (transaction) => {
     const cancellationUpdate = await transaction.processingJob.updateMany({
       where: {

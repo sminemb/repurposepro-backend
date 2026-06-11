@@ -7,6 +7,7 @@ export const notificationTypes = [
   "processing_failed",
   "generated_video_ready",
 ] as const;
+const idSchema = z.string().trim().min(1).max(128);
 
 const integerStringSchema = z
   .string()
@@ -15,7 +16,7 @@ const integerStringSchema = z
 
 export const notificationIdParamSchema = z
   .object({
-    id: z.string().min(1),
+    id: idSchema,
   })
   .strict();
 

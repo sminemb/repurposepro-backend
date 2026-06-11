@@ -123,4 +123,44 @@ describe("AI client service", () => {
       }),
     );
   });
+
+  test("rejects unsafe or inconsistent generated video output", async () => {
+    const input: AiProcessVideoInput = {
+      jobId: "job-123",
+      projectId: "project-123",
+      originalVideoUrl: "uploads/project-123/source.mp4",
+      requestedOutputs: ["summary", "reels"],
+    };
+    const fetchMock = vi.fn(async (): Promise<Response> =>
+      createJsonResponse({
+        success: true,
+        message: "Mock video processing completed",
+        data: {
+          summaryVideo: {
+            type: "summary",
+            title: "Generated Summary Video",
+            outputUrl: "../outside/summary.mp4",
+            durationSeconds: 480,
+            aspectRatio: "16:9",
+          },
+          reels: [
+            {
+              type: "summary",
+              title: "Wrong output type",
+              outputUrl: "processed/project-123/reel-1.mp4",
+              durationSeconds: 45,
+              aspectRatio: "9:16",
+            },
+          ],
+        },
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(processVideoWithAiService(input)).rejects.toMatchObject({
+      message: "AI service returned an invalid processing response",
+      statusCode: 502,
+    });
+  });
 });

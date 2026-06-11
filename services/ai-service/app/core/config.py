@@ -1,8 +1,7 @@
 from functools import lru_cache
-from typing import Annotated
 
-from pydantic import field_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic import model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -11,10 +10,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     api_prefix: str = ""
-    cors_origins: Annotated[list[str], NoDecode] = [
-        "http://localhost:5000",
-        "http://localhost:3000",
-    ]
+    ai_service_api_key: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -22,12 +18,15 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, value: str | list[str]) -> list[str]:
-        if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
-        return value
+    @model_validator(mode="after")
+    def require_production_internal_api_key(self) -> "Settings":
+        if self.environment == "production" and (
+            not self.ai_service_api_key or len(self.ai_service_api_key) < 32
+        ):
+            raise ValueError(
+                "AI_SERVICE_API_KEY must be at least 32 characters in production"
+            )
+        return self
 
 
 @lru_cache

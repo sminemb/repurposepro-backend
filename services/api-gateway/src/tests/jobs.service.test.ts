@@ -25,7 +25,7 @@ describe("startProjectProcessing", () => {
     });
 
     await expect(
-      startProjectProcessing("project-1", "user-1", "creator"),
+      startProjectProcessing("project-1", "user-1"),
     ).rejects.toMatchObject({
       message: "Project must have an uploaded video before processing can start",
       statusCode: 400,
@@ -62,8 +62,14 @@ describe("startProjectProcessing", () => {
     );
 
     await expect(
-      startProjectProcessing("project-1", "user-1", "creator"),
+      startProjectProcessing("project-1", "user-1"),
     ).resolves.toEqual(createdJob);
+    expect(prismaMock.project.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: "project-1",
+        userId: "user-1",
+      },
+    });
     expect(transaction.processingJob.create).toHaveBeenCalledWith({
       data: {
         projectId: "project-1",
@@ -103,7 +109,7 @@ describe("startProjectProcessing", () => {
     );
 
     await expect(
-      startProjectProcessing("project-1", "user-1", "creator"),
+      startProjectProcessing("project-1", "user-1"),
     ).rejects.toMatchObject({
       message: "Project already has an active processing job",
       statusCode: 409,

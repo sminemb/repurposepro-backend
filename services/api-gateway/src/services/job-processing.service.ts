@@ -80,7 +80,6 @@ const markJobFailed = async (jobId: string, error: unknown): Promise<void> => {
       job.projectId,
       job.project.title,
       jobId,
-      getCleanErrorMessage(error),
     );
   }
 };

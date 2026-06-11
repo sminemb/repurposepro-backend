@@ -1,6 +1,5 @@
 import type { ErrorRequestHandler } from "express";
 
-import { env } from "../config/env.js";
 import { AppError } from "../utils/errors.js";
 import { logger } from "../utils/logger.js";
 import { sendError } from "../utils/response.js";
@@ -18,8 +17,5 @@ export const errorMiddleware: ErrorRequestHandler = (
 
   logger.error("Unhandled request error", error);
 
-  sendError(
-    response,
-    env.nodeEnv === "production" ? "Internal server error" : error.message,
-  );
+  sendError(response, "Internal server error");
 };

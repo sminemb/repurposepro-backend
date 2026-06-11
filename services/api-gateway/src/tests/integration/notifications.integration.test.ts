@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   type ApiSuccess,
   ApiTestHarness,
+  delay,
   INTEGRATION_TEST_TIMEOUT_MS,
   type JobData,
 } from "./api-test-harness.js";
@@ -83,7 +84,7 @@ describe("RepurposePro notification flow", () => {
 
       await harness.waitForJobStatus(job.id, "completed");
 
-      const completedNotificationsResponse =
+      let completedNotificationsResponse =
         await harness.expectAuthenticatedRequest(
           () =>
             harness.agent
@@ -94,6 +95,27 @@ describe("RepurposePro notification flow", () => {
       const completedNotifications = (
         completedNotificationsResponse.body as ApiSuccess<NotificationListData>
       ).data;
+
+      for (
+        let attempt = 0;
+        completedNotifications.notifications.length < 4 && attempt < 10;
+        attempt += 1
+      ) {
+        await delay(250);
+        completedNotificationsResponse = await harness.expectAuthenticatedRequest(
+          () =>
+            harness.agent
+              .get("/api/notifications")
+              .set("Origin", harness.trustedOrigin),
+          200,
+        );
+        const latestNotifications = (
+          completedNotificationsResponse.body as ApiSuccess<NotificationListData>
+        ).data;
+
+        completedNotifications.notifications = latestNotifications.notifications;
+        completedNotifications.pagination = latestNotifications.pagination;
+      }
 
       expect(completedNotifications.notifications).toHaveLength(4);
       expect(

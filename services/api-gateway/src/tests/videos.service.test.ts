@@ -49,13 +49,40 @@ describe("uploadProjectVideo", () => {
     mocks.createVideoUploadedNotification.mockResolvedValue(undefined);
 
     await expect(
-      uploadProjectVideo("project-1", "owner-1", "creator", file),
+      uploadProjectVideo("project-1", "owner-1", file),
     ).resolves.toEqual(uploadedProject);
 
+    expect(mocks.prisma.project.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: "project-1",
+        userId: "owner-1",
+      },
+    });
     expect(mocks.createVideoUploadedNotification).toHaveBeenCalledWith(
       "owner-1",
       "project-1",
       "Source Video",
     );
+  });
+
+  test("rejects a file path outside the configured upload directory", async () => {
+    const file = {
+      path: path.resolve("outside-upload-root.mp4"),
+    } as Express.Multer.File;
+
+    mocks.prisma.project.findFirst.mockResolvedValue({
+      id: "project-1",
+      userId: "owner-1",
+      title: "Source Video",
+    });
+
+    await expect(
+      uploadProjectVideo("project-1", "owner-1", file),
+    ).rejects.toMatchObject({
+      message: "Uploaded file path is outside the configured upload directory",
+      statusCode: 500,
+    });
+
+    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
   });
 });

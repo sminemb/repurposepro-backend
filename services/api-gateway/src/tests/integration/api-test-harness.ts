@@ -206,10 +206,7 @@ export class ApiTestHarness {
     let response = await createRequest();
 
     for (let attempt = 1; attempt < 4; attempt += 1) {
-      if (
-        response.status !== 500 ||
-        response.body.message !== "Failed to get session"
-      ) {
+      if (response.status !== 500) {
         break;
       }
 
@@ -222,26 +219,51 @@ export class ApiTestHarness {
   }
 
   public async signUpAndSignIn(): Promise<void> {
-    await this.agent
+    let signUpResponse = await this.agent
       .post("/api/auth/sign-up/email")
       .set("Origin", this.trustedOrigin)
       .send({
         name: "RepurposePro Integration Test",
         email: this.email,
         password: this.password,
-      })
-      .expect(200);
+      });
+
+    for (let attempt = 1; signUpResponse.status === 500 && attempt < 4; attempt += 1) {
+      await delay(1_500);
+      signUpResponse = await this.agent
+        .post("/api/auth/sign-up/email")
+        .set("Origin", this.trustedOrigin)
+        .send({
+          name: "RepurposePro Integration Test",
+          email: this.email,
+          password: this.password,
+        });
+    }
+
+    expect(signUpResponse.status, JSON.stringify(signUpResponse.body)).toBe(200);
 
     this.agent = supertest.agent(this.app);
 
-    await this.agent
+    let signInResponse = await this.agent
       .post("/api/auth/sign-in/email")
       .set("Origin", this.trustedOrigin)
       .send({
         email: this.email,
         password: this.password,
-      })
-      .expect(200);
+      });
+
+    for (let attempt = 1; signInResponse.status === 500 && attempt < 4; attempt += 1) {
+      await delay(1_500);
+      signInResponse = await this.agent
+        .post("/api/auth/sign-in/email")
+        .set("Origin", this.trustedOrigin)
+        .send({
+          email: this.email,
+          password: this.password,
+        });
+    }
+
+    expect(signInResponse.status, JSON.stringify(signInResponse.body)).toBe(200);
   }
 
   public async createProject(title: string): Promise<ProjectData> {

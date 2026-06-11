@@ -231,7 +231,6 @@ describe("runAiProcessingJob", () => {
       "project-1",
       "Test Project",
       "job-1",
-      "AI service is unavailable",
     );
   });
 

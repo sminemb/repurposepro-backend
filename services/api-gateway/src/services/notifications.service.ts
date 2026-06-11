@@ -2,7 +2,6 @@ import {
   NotificationType,
   type Notification,
   type Prisma,
-  type UserRole,
 } from "@prisma/client";
 
 import { prisma } from "../lib/prisma.js";
@@ -99,7 +98,6 @@ export const getUnreadCountForUser = (userId: string): Promise<number> =>
 export const markNotificationAsRead = async (
   notificationId: string,
   userId: string,
-  _role: UserRole,
 ): Promise<Notification | null> => {
   const updateResult = await prisma.notification.updateMany({
     where: {
@@ -192,7 +190,6 @@ export const createProcessingFailedNotification = (
   projectId: string,
   projectTitle: string,
   jobId: string,
-  errorMessage: string,
 ): Promise<void> =>
   createNotificationSafely("processing failed", {
     userId,
@@ -202,7 +199,6 @@ export const createProcessingFailedNotification = (
     metadata: {
       projectId,
       jobId,
-      errorMessage,
     },
   });
 

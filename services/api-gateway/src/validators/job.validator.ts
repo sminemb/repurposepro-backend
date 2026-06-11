@@ -7,16 +7,17 @@ const processingJobStatuses = [
   "failed",
   "cancelled",
 ] as const;
+const idSchema = z.string().trim().min(1).max(128);
 
 export const projectJobIdParamSchema = z
   .object({
-    id: z.string().min(1),
+    id: idSchema,
   })
   .strict();
 
 export const jobIdParamSchema = z
   .object({
-    id: z.string().min(1),
+    id: idSchema,
   })
   .strict();
 

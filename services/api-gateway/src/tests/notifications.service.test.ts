@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     notification: {
       count: vi.fn(),
+      create: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
       updateMany: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock("../lib/prisma.js", () => ({
 }));
 
 const {
+  createVideoUploadedNotification,
   getNotificationsForUser,
   getUnreadCountForUser,
   markNotificationAsRead,
@@ -99,7 +101,7 @@ describe("notifications service", () => {
     mocks.prisma.notification.findUnique.mockResolvedValue(notification);
 
     await expect(
-      markNotificationAsRead("notification-1", "user-1", "creator"),
+      markNotificationAsRead("notification-1", "user-1"),
     ).resolves.toEqual(notification);
 
     expect(mocks.prisma.notification.updateMany).toHaveBeenCalledWith({
@@ -117,7 +119,7 @@ describe("notifications service", () => {
     mocks.prisma.notification.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(
-      markNotificationAsRead("notification-2", "user-1", "creator"),
+      markNotificationAsRead("notification-2", "user-1"),
     ).resolves.toBeNull();
 
     expect(mocks.prisma.notification.updateMany).toHaveBeenCalledWith({
@@ -130,5 +132,15 @@ describe("notifications service", () => {
       },
     });
     expect(mocks.prisma.notification.findUnique).not.toHaveBeenCalled();
+  });
+
+  test("does not fail the upload workflow when notification creation fails", async () => {
+    mocks.prisma.notification.create.mockRejectedValue(
+      new Error("database unavailable"),
+    );
+
+    await expect(
+      createVideoUploadedNotification("user-1", "project-1", "Project"),
+    ).resolves.toBeUndefined();
   });
 });

@@ -1,8 +1,12 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.dependencies import require_internal_api_key
 from app.schemas.processing_schema import ApiResponse
 
-router = APIRouter(tags=["health"])
+router = APIRouter(
+    tags=["health"],
+    dependencies=[Depends(require_internal_api_key)],
+)
 
 
 @router.get("/health", response_model=ApiResponse)

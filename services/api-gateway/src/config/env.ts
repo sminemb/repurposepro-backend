@@ -1,4 +1,5 @@
 import "dotenv/config";
+import path from "node:path";
 
 const DEFAULT_PORT = 5000;
 const DEFAULT_UPLOAD_DIR = "storage/uploads";
@@ -54,6 +55,56 @@ const optionalEnv = (name: string): string | undefined => {
   return value === undefined || value.length === 0 ? undefined : value;
 };
 
+const parseHttpUrl = (name: string, value: string): string => {
+  let url: URL;
+
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${name} must be a valid HTTP or HTTPS URL`);
+  }
+
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username.length > 0 ||
+    url.password.length > 0 ||
+    url.search.length > 0 ||
+    url.hash.length > 0
+  ) {
+    throw new Error(`${name} must be a valid HTTP or HTTPS URL without credentials`);
+  }
+
+  return value.replace(/\/+$/, "");
+};
+
+const parseCorsOrigin = (value: string | undefined): string => {
+  const origin = parseHttpUrl("CORS_ORIGIN", value?.trim() || "http://localhost:3000");
+  const url = new URL(origin);
+
+  if (origin === "*" || origin !== url.origin) {
+    throw new Error("CORS_ORIGIN must be a single explicit origin");
+  }
+
+  return origin;
+};
+
+const parseUploadDir = (value: string | undefined): string => {
+  const configuredPath = value?.trim() || DEFAULT_UPLOAD_DIR;
+  const serviceRoot = process.cwd();
+  const resolvedPath = path.resolve(serviceRoot, configuredPath);
+  const relativePath = path.relative(serviceRoot, resolvedPath);
+
+  if (
+    relativePath === ".." ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath)
+  ) {
+    throw new Error("UPLOAD_DIR must resolve within the API Gateway service directory");
+  }
+
+  return configuredPath;
+};
+
 const parseArcjetEnv = (value: string | undefined): "development" | "production" => {
   if (value === undefined || value.length === 0) {
     return "development";
@@ -69,26 +120,43 @@ const parseArcjetEnv = (value: string | undefined): "development" | "production"
 const arcjetKey = optionalEnv("ARCJET_KEY");
 const arcjetEnv = parseArcjetEnv(process.env.ARCJET_ENV);
 const nodeEnv = process.env.NODE_ENV ?? "development";
+const betterAuthSecret = requireEnv("BETTER_AUTH_SECRET");
+const aiServiceApiKey = optionalEnv("AI_SERVICE_API_KEY");
 
 if ((nodeEnv === "production" || arcjetEnv === "production") && arcjetKey === undefined) {
   throw new Error("ARCJET_KEY must be configured in production");
 }
 
+if (nodeEnv === "production" && betterAuthSecret.length < 32) {
+  throw new Error("BETTER_AUTH_SECRET must be at least 32 characters in production");
+}
+
+if (
+  nodeEnv === "production" &&
+  (aiServiceApiKey === undefined || aiServiceApiKey.length < 32)
+) {
+  throw new Error("AI_SERVICE_API_KEY must be at least 32 characters in production");
+}
+
 export const env = {
   port: parsePort(process.env.PORT),
-  corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:3000",
+  corsOrigin: parseCorsOrigin(process.env.CORS_ORIGIN),
   nodeEnv,
-  betterAuthSecret: requireEnv("BETTER_AUTH_SECRET"),
-  betterAuthUrl: requireEnv("BETTER_AUTH_URL"),
+  betterAuthSecret,
+  betterAuthUrl: parseHttpUrl("BETTER_AUTH_URL", requireEnv("BETTER_AUTH_URL")),
   arcjetKey,
   arcjetEnv,
-  uploadDir: process.env.UPLOAD_DIR?.trim() || DEFAULT_UPLOAD_DIR,
+  uploadDir: parseUploadDir(process.env.UPLOAD_DIR),
   maxUploadSizeMb: parsePositiveInteger(
     "MAX_UPLOAD_SIZE_MB",
     process.env.MAX_UPLOAD_SIZE_MB,
     DEFAULT_MAX_UPLOAD_SIZE_MB,
   ),
-  aiServiceUrl: process.env.AI_SERVICE_URL?.trim() || DEFAULT_AI_SERVICE_URL,
+  aiServiceUrl: parseHttpUrl(
+    "AI_SERVICE_URL",
+    process.env.AI_SERVICE_URL?.trim() || DEFAULT_AI_SERVICE_URL,
+  ),
+  aiServiceApiKey,
   aiServiceTimeoutMs: parsePositiveInteger(
     "AI_SERVICE_TIMEOUT_MS",
     process.env.AI_SERVICE_TIMEOUT_MS,

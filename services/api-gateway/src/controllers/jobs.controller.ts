@@ -1,6 +1,6 @@
-import type { Request, RequestHandler } from "express";
-import type { UserRole } from "@prisma/client";
+import type { RequestHandler } from "express";
 
+import { getAuthenticatedUserId } from "../middlewares/auth.middleware.js";
 import {
   cancelJob,
   getJobByIdForUser,
@@ -17,31 +17,15 @@ import { AppError } from "../utils/errors.js";
 import { logger } from "../utils/logger.js";
 import { sendSuccess } from "../utils/response.js";
 
-const userRoles = new Set<UserRole>(["admin", "creator", "editor"]);
-
-const isUserRole = (value: unknown): value is UserRole =>
-  typeof value === "string" && userRoles.has(value as UserRole);
-
-const getAuthContext = (request: Request): { userId: string; role: UserRole } => {
-  if (request.auth === undefined) {
-    throw new AppError("Authentication required", 401);
-  }
-
-  return {
-    userId: request.auth.user.id,
-    role: isUserRole(request.auth.user.role) ? request.auth.user.role : "creator",
-  };
-};
-
 export const startProjectProcessingController: RequestHandler = async (
   request,
   response,
   next,
 ) => {
   try {
-    const { userId, role } = getAuthContext(request);
+    const userId = getAuthenticatedUserId(request);
     const { id } = request.params as ProjectJobIdParams;
-    const job = await startProjectProcessing(id, userId, role);
+    const job = await startProjectProcessing(id, userId);
 
     if (job === null) {
       throw new AppError("Project not found", 404);
@@ -64,9 +48,9 @@ export const getJobController: RequestHandler = async (
   next,
 ) => {
   try {
-    const { userId, role } = getAuthContext(request);
+    const userId = getAuthenticatedUserId(request);
     const { id } = request.params as JobIdParams;
-    const job = await getJobByIdForUser(id, userId, role);
+    const job = await getJobByIdForUser(id, userId);
 
     if (job === null) {
       throw new AppError("Processing job not found", 404);
@@ -84,10 +68,10 @@ export const listProjectJobsController: RequestHandler = async (
   next,
 ) => {
   try {
-    const { userId, role } = getAuthContext(request);
+    const userId = getAuthenticatedUserId(request);
     const { id } = request.params as ProjectJobIdParams;
     const filters = request.validatedQuery as ListProjectJobsQuery;
-    const jobs = await getJobsByProjectForUser(id, userId, role, filters);
+    const jobs = await getJobsByProjectForUser(id, userId, filters);
 
     if (jobs === null) {
       throw new AppError("Project not found", 404);
@@ -105,9 +89,9 @@ export const cancelJobController: RequestHandler = async (
   next,
 ) => {
   try {
-    const { userId, role } = getAuthContext(request);
+    const userId = getAuthenticatedUserId(request);
     const { id } = request.params as JobIdParams;
-    const job = await cancelJob(id, userId, role);
+    const job = await cancelJob(id, userId);
 
     if (job === null) {
       throw new AppError("Processing job not found", 404);

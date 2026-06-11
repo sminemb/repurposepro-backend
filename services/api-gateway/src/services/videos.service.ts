@@ -1,30 +1,40 @@
 import path from "node:path";
 
-import { ProjectStatus, type Project, type UserRole } from "@prisma/client";
+import { ProjectStatus, type Project } from "@prisma/client";
 
+import { env } from "../config/env.js";
 import { prisma } from "../lib/prisma.js";
+import { AppError } from "../utils/errors.js";
 import { createVideoUploadedNotification } from "./notifications.service.js";
 
-const canUploadToAnyProject = (role: UserRole): boolean => role === "admin";
+const uploadDirectory = path.resolve(process.cwd(), env.uploadDir);
 
-const toLocalAssetPath = (filePath: string): string =>
-  path.relative(process.cwd(), filePath).split(path.sep).join("/");
+const toLocalAssetPath = (filePath: string): string => {
+  const resolvedFilePath = path.resolve(filePath);
+  const relativeUploadPath = path.relative(uploadDirectory, resolvedFilePath);
+
+  if (
+    relativeUploadPath.length === 0 ||
+    relativeUploadPath === ".." ||
+    relativeUploadPath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeUploadPath)
+  ) {
+    throw new AppError("Uploaded file path is outside the configured upload directory");
+  }
+
+  return path.relative(process.cwd(), resolvedFilePath).split(path.sep).join("/");
+};
 
 export const uploadProjectVideo = async (
   projectId: string,
   userId: string,
-  role: UserRole,
   file: Express.Multer.File,
 ): Promise<Project | null> => {
   const existingProject = await prisma.project.findFirst({
-    where: canUploadToAnyProject(role)
-      ? {
-          id: projectId,
-        }
-      : {
-          id: projectId,
-          userId,
-        },
+    where: {
+      id: projectId,
+      userId,
+    },
   });
 
   if (existingProject === null) {

@@ -42,3 +42,52 @@ def test_process_video_rejects_invalid_payload() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_process_video_rejects_unsafe_paths_and_unknown_outputs() -> None:
+    unsafe_path_response = client.post(
+        "/process-video",
+        json={
+            "jobId": "job-123",
+            "projectId": "project-123",
+            "originalVideoUrl": "../private/source.mp4",
+            "requestedOutputs": ["summary"],
+        },
+    )
+    unknown_output_response = client.post(
+        "/process-video",
+        json={
+            "jobId": "job-123",
+            "projectId": "project-123",
+            "originalVideoUrl": "uploads/project-123/source.mp4",
+            "requestedOutputs": ["analytics"],
+        },
+    )
+
+    assert unsafe_path_response.status_code == 422
+    assert unknown_output_response.status_code == 422
+
+
+def test_process_video_rejects_extra_fields_and_duplicate_outputs() -> None:
+    extra_field_response = client.post(
+        "/process-video",
+        json={
+            "jobId": "job-123",
+            "projectId": "project-123",
+            "originalVideoUrl": "uploads/project-123/source.mp4",
+            "requestedOutputs": ["summary"],
+            "userId": "untrusted-user",
+        },
+    )
+    duplicate_output_response = client.post(
+        "/process-video",
+        json={
+            "jobId": "job-123",
+            "projectId": "project-123",
+            "originalVideoUrl": "uploads/project-123/source.mp4",
+            "requestedOutputs": ["summary", "summary"],
+        },
+    )
+
+    assert extra_field_response.status_code == 422
+    assert duplicate_output_response.status_code == 422
