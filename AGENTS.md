@@ -11,13 +11,20 @@ RepurposePro is an AI-powered video repurposing platform that transforms long-fo
 
 The backend uses a hybrid architecture:
 
-- Express.js + TypeScript for the main application backend/API gateway
+- Express.js + TypeScript for the main application backend/API Gateway
 - FastAPI + Python for AI and video processing
 - Neon Serverless Postgres for persistent data
+- Prisma ORM for database access
 - Better Auth for authentication and session management
 - Arcjet for API protection, bot protection, and rate limiting
-- Redis for background job queues later
+- Redis/BullMQ for background job queues later
 - S3-compatible storage for video assets later
+
+The backend should be built phase by phase.
+
+Do not build multiple phases at once.
+
+Do not jump ahead to later phases unless explicitly requested.
 
 ## Main Architecture
 
@@ -58,7 +65,7 @@ The `services/api-gateway` service handles:
 - Templates later
 - Export records later
 - Admin features later
-- Communication with the FastAPI AI service
+- Communication with the FastAPI AI Service
 - Database ownership
 - User-facing REST API
 
@@ -78,7 +85,21 @@ The `services/ai-service` service handles:
 - FFmpeg rendering
 - AI/video processing pipelines
 
-The frontend should call the Express API Gateway only. The FastAPI AI Service is an internal backend service and should not be exposed directly to end users.
+The frontend should call the Express API Gateway only.
+
+The FastAPI AI Service is an internal backend service and should not be exposed directly to end users.
+
+Allowed flow:
+
+```txt
+Frontend → Express API Gateway → FastAPI AI Service
+```
+
+Disallowed flow:
+
+```txt
+Frontend → FastAPI AI Service
+```
 
 ## Technology Stack
 
@@ -96,7 +117,7 @@ Use:
 - Zod for validation
 - Multer for local MVP video uploads
 - Redis/BullMQ for queues later
-- Axios or fetch for internal API calls
+- Axios or native fetch for internal API calls
 
 ### AI Service
 
@@ -126,7 +147,100 @@ Use these tools gradually as the pipeline becomes real:
 - Pydantic for request and response validation
 - pytest for testing FastAPI logic
 
-Do not add all AI tools at once. Add them only when the matching phase requires them.
+Do not add all AI tools at once.
+
+Add them only when the matching phase requires them.
+
+## Backend Quality Rules
+
+RepurposePro backend should feel like a real production backend, not an AI-generated demo project.
+
+Every backend feature must be:
+
+- Secure by default
+- Typed where practical
+- Validated at the API boundary
+- Protected by authentication when user-specific
+- Protected by ownership checks when project-specific
+- Consistent with the existing architecture
+- Small enough to review
+- Easy to test
+- Free from fake, unused, or decorative logic
+
+Do not create backend code just to make the project look bigger.
+
+Do not add unused services, unused abstractions, fake analytics, fake AI scores, fake admin data, mock records, or placeholder business logic unless the current phase explicitly requires mock behavior.
+
+Mock behavior is only acceptable when the phase explicitly says it is mock-based.
+
+## Backend Anti-AI-Slop Rules
+
+Do not generate:
+
+```txt
+Fake metrics
+Fake analytics
+Fake AI quality scores
+Fake engagement predictions
+Fake user activity
+Fake admin stats
+Unused routes
+Unused services
+Unused database models
+Unused middleware
+Overly generic helper functions
+Over-engineered abstractions
+Placeholder business logic
+Decorative comments
+Console logs everywhere
+Hard-coded sample users
+Hard-coded sample projects
+Hard-coded generated videos
+```
+
+Every backend file must have a clear purpose.
+
+Before adding any file, route, service, model, or helper, ask:
+
+```txt
+Does this directly support authentication, project management, video upload, processing, generated outputs, notifications, or security?
+```
+
+If not, do not add it.
+
+## Secure-by-Default Backend Rules
+
+Security is not optional.
+
+For every protected feature, enforce:
+
+```txt
+Authentication
+Authorization
+Ownership checks
+Input validation
+Rate limiting where appropriate
+Safe error handling
+Safe logging
+Environment-based secrets
+```
+
+Never trust:
+
+```txt
+Request body
+Request params
+Request query
+Uploaded filenames
+Uploaded MIME types alone
+Client-provided user IDs
+Client-provided role values
+Client-provided project ownership
+Client-provided file paths
+Client-provided output URLs
+```
+
+The backend must verify everything server-side.
 
 ## Database Strategy
 
@@ -183,6 +297,55 @@ Always update `.env.example` when adding or changing database environment variab
 
 For local development, a Neon development branch is acceptable. A local Docker PostgreSQL instance may also be used when offline development is needed.
 
+## Database Safety Rules
+
+Use Prisma for database access.
+
+Do not use raw SQL unless necessary.
+
+If raw SQL is required:
+
+- Explain why.
+- Use parameterized queries.
+- Never interpolate user input directly.
+
+Use transactions when multiple related writes must succeed together.
+
+Examples:
+
+```txt
+Create processing job + update project status
+Save generated videos + update job status + update project status
+Delete project + related cleanup metadata
+```
+
+Avoid orphaned records.
+
+Use indexes for frequently queried fields.
+
+Use cascade deletes carefully and intentionally.
+
+Do not store video files directly in PostgreSQL.
+
+Store file metadata and safe paths/URLs only.
+
+## Prisma Model Rules
+
+Do not add models before they are needed by a phase.
+
+Do not add fields “just in case.”
+
+When adding a model:
+
+- Add clear relations.
+- Add useful indexes.
+- Add enums for controlled statuses/types.
+- Update Prisma Client.
+- Update `.env.example` if needed.
+- Document migration commands.
+
+Do not break Better Auth models.
+
 ## Authentication Strategy
 
 Use Better Auth for authentication instead of building custom JWT authentication from scratch.
@@ -196,11 +359,13 @@ Better Auth should handle:
 - Password hashing
 - Auth route handlers
 - Session validation
-- Future plugins such as organizations, teams, 2FA, social login, or passkeys
+- Future plugins such as organizations, teams, 2FA, social login, passkeys, or email verification
 
 The API Gateway should use session-based authentication through Better Auth.
 
 Do not manually create custom JWT authentication unless explicitly requested.
+
+Email verification is not required for the MVP unless explicitly added later.
 
 ## Better Auth Requirements
 
@@ -229,6 +394,111 @@ CORS_ORIGIN=http://localhost:3000
 ```
 
 For local development, the API Gateway should run on port `5000`.
+
+## Authentication and Session Security Rules
+
+Use Better Auth for authentication and sessions.
+
+Do not build custom JWT authentication unless explicitly requested.
+
+Rules:
+
+- Do not store passwords manually.
+- Do not log passwords.
+- Do not log cookies.
+- Do not log session IDs.
+- Do not log auth headers.
+- Do not expose session secrets.
+- Do not expose Better Auth secrets.
+- Do not manually trust a user ID sent from the frontend.
+- Always derive the authenticated user from the verified session.
+- All user-specific routes must require authentication.
+- Dashboard, project, upload, job, generated-video, and notification routes must be protected.
+
+If a route uses `req.user`, `req.session`, or similar authenticated context, make sure the auth middleware populated it safely.
+
+## Authorization and Ownership Rules
+
+Most creator routes must enforce ownership.
+
+Normal users may only access their own:
+
+```txt
+Projects
+Uploads
+Processing jobs
+Generated videos
+Notifications
+```
+
+Admin users may access broader records only when the route is explicitly designed as an admin route.
+
+Do not silently allow admin bypasses in normal user routes unless the phase requires it.
+
+Ownership must be checked in the service layer, not only in the controller.
+
+For project-owned resources, verify ownership through the project relation.
+
+Example:
+
+```txt
+GeneratedVideo → Project → userId
+ProcessingJob → Project → userId
+Notification → userId
+```
+
+Do not trust IDs alone.
+
+## User Role Guidance
+
+Use one `User` table with a `role` field.
+
+The roles are:
+
+```txt
+admin
+creator
+editor
+```
+
+### admin
+
+Admin users can manage the system.
+
+Typical admin permissions:
+
+- View all users
+- View all projects
+- Manage system-level records
+- Access admin routes
+- Debug or review processing jobs
+- Manage future templates/settings
+
+### creator
+
+Creator users are the main normal users.
+
+Typical creator permissions:
+
+- Create projects
+- Upload videos
+- Start processing jobs
+- View their own generated videos
+- Edit or delete their own projects
+- Export/download their own outputs later
+
+### editor
+
+Editor users are collaborators.
+
+Typical editor permissions:
+
+- View assigned or owned projects depending on MVP rules
+- Edit content metadata
+- Preview generated outputs
+- Assist creators with content review
+
+For MVP, it is acceptable to store the `editor` role but treat it similarly to `creator` until collaboration/assignment features are built.
 
 ## API Protection Strategy
 
@@ -302,6 +572,54 @@ For MVP, prioritize Arcjet protection on:
 /api/projects/:id/process
 ```
 
+## Arcjet and Rate Limit Rules
+
+Use Arcjet for API protection in the Express API Gateway.
+
+Apply strict protection to:
+
+```txt
+/api/auth/*
+/api/projects/:id/upload
+/api/projects/:id/process
+/api/jobs/*
+```
+
+Recommended protections:
+
+```txt
+Auth routes: strict login/signup abuse prevention
+Upload routes: low hourly limit
+Processing routes: low hourly limit
+General API routes: reasonable per-minute limit
+```
+
+When rate-limited, return a clear `429 Too Many Requests` response.
+
+Do not remove Arcjet protection once added unless explicitly requested.
+
+Do not bypass Arcjet for expensive routes.
+
+## CORS and Cookie Rules
+
+Use strict CORS configuration.
+
+For local development, allow the frontend origin:
+
+```txt
+http://localhost:3000
+```
+
+Use credentials carefully with cookie-based sessions.
+
+Do not use wildcard `*` CORS with credentials.
+
+Production CORS must use explicit allowed origins.
+
+Do not expose cookies to untrusted origins.
+
+Use HTTPS in production.
+
 ## Notification Strategy
 
 RepurposePro should support notifications after the core processing flow is connected.
@@ -327,7 +645,7 @@ The frontend should:
 
 For MVP, use REST-based notifications first. Real-time notifications using Server-Sent Events or WebSockets can be added later.
 
-### Notification Events
+## Notification Events
 
 Create notifications for events such as:
 
@@ -348,7 +666,7 @@ processing_failed
 generated_video_ready
 ```
 
-### Notification Database Model
+## Notification Database Model
 
 Add a `Notification` model when the notification phase begins.
 
@@ -367,6 +685,10 @@ model Notification {
   updatedAt DateTime         @updatedAt
 
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
 }
 
 enum NotificationType {
@@ -384,7 +706,7 @@ Also add the reverse relation to the `User` model:
 notifications Notification[]
 ```
 
-### Notification API Routes
+## Notification API Routes
 
 Recommended notification routes:
 
@@ -404,39 +726,27 @@ Rules:
 - Use the existing response helper.
 - Use the existing centralized error handler.
 
-### Notification Folder Structure
+## Notification Safety Rules
 
-Add these files during the notification phase:
+Notifications are backend-owned.
 
-```txt
-services/api-gateway/src/
-├── routes/
-│   └── notifications.routes.ts
-├── controllers/
-│   └── notifications.controller.ts
-├── services/
-│   └── notifications.service.ts
-├── validators/
-│   └── notification.validator.ts
-```
+Express creates notification records.
 
-Optional later:
+FastAPI must not create notifications directly.
+
+Notification failures should not crash upload or processing workflows.
+
+Notification metadata should contain useful IDs, such as:
 
 ```txt
-services/api-gateway/src/
-├── services/
-│   └── realtime.service.ts
+projectId
+jobId
+generatedVideoId
 ```
 
-### Notification Rules
+Do not store secrets or sensitive data in notification metadata.
 
-- Express API Gateway owns notification logic.
-- FastAPI AI Service should not directly create notifications.
-- FastAPI can return processing results to Express.
-- Express should decide which notification records to create.
-- Notifications should be stored in Neon/PostgreSQL.
-- Notifications should not block video processing if notification creation fails.
-- Notification failures should be logged but should not crash the processing workflow.
+Users can only read or update their own notifications unless an explicit admin route exists.
 
 ## Coding Rules
 
@@ -473,7 +783,35 @@ services/api-gateway/src/
 - Avoid using `any` unless absolutely necessary.
 - Add or update Express request typing when authentication data is attached to `req`.
 
-Recommended response shape for custom API routes:
+## Input Validation Rules
+
+Use Zod validation for Express request input.
+
+Validate:
+
+```txt
+Request body
+Route params
+Query params
+Uploaded file metadata
+Pagination input
+Filter input
+Enum values
+```
+
+Reject invalid input early.
+
+Do not pass raw request data directly into Prisma or service logic.
+
+Do not rely only on TypeScript types for runtime validation.
+
+Validation errors should return clear, safe messages.
+
+## API Response Rules
+
+Use consistent API responses for custom routes.
+
+Success response:
 
 ```json
 {
@@ -483,7 +821,7 @@ Recommended response shape for custom API routes:
 }
 ```
 
-Recommended error response shape for custom API routes:
+Error response:
 
 ```json
 {
@@ -491,6 +829,111 @@ Recommended error response shape for custom API routes:
   "message": "Error message",
   "errors": []
 }
+```
+
+Do not leak stack traces in production.
+
+Do not leak database internals.
+
+Do not leak Prisma error details to end users.
+
+Do not expose filesystem paths unless they are safe public paths.
+
+Better Auth routes may use Better Auth’s own response format.
+
+## Error Handling Rules
+
+Use centralized error handling.
+
+Do not scatter raw `try/catch` responses everywhere.
+
+Services may throw clean application errors.
+
+Controllers should stay thin.
+
+Errors should be:
+
+```txt
+Readable
+Safe
+Actionable
+Consistent
+```
+
+Avoid:
+
+```txt
+throw new Error("failed")
+throw new Error(JSON.stringify(error))
+res.status(500).send(error)
+console.log(error)
+```
+
+If logging internal errors, sanitize sensitive values first.
+
+## Logging Rules
+
+Logs should help debugging without leaking secrets.
+
+Do not log:
+
+```txt
+Passwords
+Cookies
+Session IDs
+Auth tokens
+API keys
+Arcjet keys
+Database URLs
+Email provider keys
+Full request bodies containing sensitive data
+Raw uploaded file contents
+```
+
+Allowed logs:
+
+```txt
+Request method and path
+Job ID
+Project ID
+User ID when needed for debugging
+Sanitized error message
+Processing step
+Timing information
+```
+
+Use structured logging when practical.
+
+Remove noisy debug logs before completing a phase.
+
+## Environment Variable Rules
+
+All secrets and environment-specific values must come from environment variables.
+
+Do not hard-code:
+
+```txt
+Database URLs
+Auth secrets
+Arcjet keys
+API keys
+Email provider credentials
+Storage credentials
+Internal service URLs
+Upload limits
+CORS origins
+```
+
+Always update `.env.example` when adding a new environment variable.
+
+`.env` files must never be committed.
+
+Recommended pattern:
+
+```txt
+Read env variables in config files.
+Validate required env variables on startup.
+Use safe defaults only for local development.
 ```
 
 ## Express Folder Structure
@@ -712,50 +1155,7 @@ creator
 editor
 ```
 
-## User Role Guidance
-
-Use one `User` table with a `role` field.
-
-The roles are:
-
-### admin
-
-Admin users can manage the system.
-
-Typical admin permissions:
-
-- View all users
-- View all projects
-- Manage system-level records
-- Access admin routes
-- Debug or review processing jobs
-- Manage future templates/settings
-
-### creator
-
-Creator users are the main normal users.
-
-Typical creator permissions:
-
-- Create projects
-- Upload videos
-- Start processing jobs
-- View their own generated videos
-- Edit or delete their own projects
-- Export/download their own outputs later
-
-### editor
-
-Editor users are collaborators.
-
-Typical editor permissions:
-
-- View assigned or owned projects depending on MVP rules
-- Edit content metadata
-- Preview generated outputs
-- Assist creators with content review
-
-For MVP, it is acceptable to store the `editor` role but treat it similarly to `creator` until collaboration/assignment features are built.
+Do not invent new status strings unless the schema is intentionally updated.
 
 ## API Route Style
 
@@ -865,21 +1265,27 @@ Later, switch to:
 
 Allowed input video formats:
 
-- `.mp4`
-- `.mov`
-- `.mkv`
-- `.webm`
+```txt
+.mp4
+.mov
+.mkv
+.webm
+```
 
 Allowed MIME types:
 
-- `video/mp4`
-- `video/quicktime`
-- `video/x-matroska`
-- `video/webm`
+```txt
+video/mp4
+video/quicktime
+video/x-matroska
+video/webm
+```
 
 Default maximum video duration:
 
-- 2 hours
+```txt
+2 hours
+```
 
 Default maximum upload size:
 
@@ -889,10 +1295,12 @@ Default maximum upload size:
 
 Default output formats:
 
-- `.mp4`
-- `.srt`
-- `.vtt`
-- `.json`
+```txt
+.mp4
+.srt
+.vtt
+.json
+```
 
 Upload field name must be:
 
@@ -907,6 +1315,41 @@ Recommended filename format:
 ```txt
 projectId-timestamp-random.ext
 ```
+
+## Upload Security Rules
+
+Uploads are high-risk and must be handled carefully.
+
+Rules:
+
+- Use `multer` or the approved upload middleware.
+- Upload field name must be `video`.
+- Validate file extension.
+- Validate MIME type.
+- Enforce maximum upload size.
+- Generate safe filenames.
+- Never trust the original filename.
+- Prevent path traversal.
+- Store files only in the configured upload directory.
+- Clean up uploaded files if the request fails after upload.
+- Do not execute uploaded files.
+- Do not expose local filesystem paths directly to users.
+
+## File Path and Storage Safety Rules
+
+All file paths must be normalized and controlled.
+
+Do not allow the frontend to decide storage paths.
+
+Do not allow `../` path traversal.
+
+Do not allow absolute user-provided paths.
+
+Do not expose internal local paths as public URLs unless intentionally mapped.
+
+Use storage service helpers when practical.
+
+Later S3/R2/MinIO support should use signed URLs where appropriate.
 
 ## Video Processing Requirements
 
@@ -990,6 +1433,56 @@ For reels, prefer:
 Hook strength + Standalone clarity + Emotional impact + Shareability
 ```
 
+## FastAPI Internal Service Security Rules
+
+The frontend must never call FastAPI directly.
+
+Express should validate user permissions before calling FastAPI.
+
+FastAPI should treat requests as internal but still validate payloads.
+
+FastAPI should not own business database records during MVP.
+
+Express owns:
+
+```txt
+Users
+Projects
+Processing jobs
+Generated videos
+Notifications
+```
+
+FastAPI returns processing results.
+
+Express decides what to save.
+
+## AI and Video Processing Safety Rules
+
+Do not add real AI/video processing before the assigned phase.
+
+Do not add LLM provider integration until the optional LLM phase.
+
+Do not add FFmpeg, Whisper, OpenCV, PySceneDetect, or ML libraries before their phases.
+
+When FFmpeg is added:
+
+- Isolate commands in utility functions.
+- Never concatenate unsanitized user input into shell commands.
+- Prefer argument arrays over shell strings.
+- Validate input and output paths.
+- Restrict processing to allowed directories.
+- Handle timeouts and failures.
+- Log only sanitized command context.
+- Do not expose raw FFmpeg errors directly to users.
+
+When Whisper/transcription is added:
+
+- Store transcript outputs safely.
+- Do not assume transcript text is safe HTML.
+- Escape transcript/caption text before rendering in frontend later.
+- Treat transcript content as user-generated content.
+
 ## LLM Strategy
 
 An LLM may be used later, but it should not be required for the MVP.
@@ -1018,6 +1511,52 @@ Use an LLM later for:
 The LLM should live inside the FastAPI AI Service, not the Express API Gateway.
 
 Do not add LLM provider integration until the basic rule-based pipeline works.
+
+## LLM Safety Rules
+
+LLM integration is optional and later.
+
+Do not make the LLM required for the MVP.
+
+If LLM support is added later:
+
+- Keep provider keys in environment variables.
+- Do not hard-code prompts in controllers.
+- Do not send secrets to the LLM.
+- Do not send unnecessary user data to the LLM.
+- Treat LLM output as untrusted.
+- Validate and sanitize LLM output.
+- Do not let LLM output directly control file paths, shell commands, SQL queries, or authorization decisions.
+- Do not claim outputs are guaranteed to go viral.
+
+LLM must not decide security-sensitive behavior.
+
+## Background Job Safety Rules
+
+For MVP, mock async processing may use fire-and-forget functions only when the phase allows it.
+
+All async background functions must:
+
+- Catch errors.
+- Log sanitized failures.
+- Update job status on failure.
+- Avoid unhandled promise rejections.
+- Avoid leaving jobs stuck in `processing`.
+
+Before starting a new processing job, check for an active job:
+
+```txt
+queued
+processing
+```
+
+If active job exists, return a clean error:
+
+```txt
+Project already has an active processing job
+```
+
+Later, replace fire-and-forget processing with Redis/BullMQ or another real queue.
 
 ## Build Order
 
@@ -1141,65 +1680,11 @@ For Phase 7:
 - Do not add Whisper.
 - Do not add real AI/video processing yet.
 
-Required structure:
-
-```txt
-services/ai-service/
-├── requirements.txt
-├── Dockerfile
-├── .env.example
-└── app/
-    ├── main.py
-    ├── api/
-    │   ├── routes/
-    │   │   ├── health.py
-    │   │   └── processing.py
-    │   └── dependencies.py
-    ├── core/
-    │   ├── config.py
-    │   └── logging.py
-    ├── schemas/
-    │   └── processing_schema.py
-    ├── services/
-    │   └── processing_service.py
-    └── utils/
-        └── exceptions.py
-```
-
 Required FastAPI routes:
 
 ```txt
 GET  /health
 POST /process-video
-```
-
-The `/process-video` route should accept mock processing input and return mock output metadata.
-
-Example mock response:
-
-```json
-{
-  "success": true,
-  "message": "Mock video processing completed",
-  "data": {
-    "summaryVideo": {
-      "type": "summary",
-      "title": "Generated Summary Video",
-      "outputUrl": "processed/mock-summary.mp4",
-      "durationSeconds": 480,
-      "aspectRatio": "16:9"
-    },
-    "reels": [
-      {
-        "type": "reel",
-        "title": "Generated Reel 1",
-        "outputUrl": "processed/mock-reel-1.mp4",
-        "durationSeconds": 45,
-        "aspectRatio": "9:16"
-      }
-    ]
-  }
-}
 ```
 
 ### Phase 8 — Express-to-FastAPI Communication
@@ -1212,38 +1697,22 @@ For Phase 8:
 - Do not replace the mock processing workflow yet unless requested.
 - Do not add real FFmpeg or Whisper.
 
-In Express, create or update:
-
-```txt
-services/api-gateway/src/services/ai-client.service.ts
-```
-
 Recommended environment variable:
 
 ```txt
 AI_SERVICE_URL=http://localhost:8000
 ```
 
-The AI client should be responsible for calling:
-
-```txt
-POST /process-video
-```
-
-The Express service should not contain AI/video-processing logic.
-
 ### Phase 9 — Replace Express Mock Processing with FastAPI Mock Processing
 
 For Phase 9:
 
 - Replace the local Express mock processing simulation with a FastAPI mock processing call.
-- When the user starts processing:
-  - Express creates a `ProcessingJob`.
-  - Express updates the project status to `queued`.
-  - Express calls the FastAPI mock processing endpoint.
-  - Express saves returned mock generated video metadata.
-  - Express updates the job status and project status.
-
+- Express creates a `ProcessingJob`.
+- Express updates the project status to `queued`.
+- Express calls the FastAPI mock processing endpoint.
+- Express saves returned mock generated video metadata.
+- Express updates the job status and project status.
 - Keep this mock-based.
 - Do not add real FFmpeg yet.
 - Do not add Whisper yet.
@@ -1303,13 +1772,6 @@ For Phase 11:
 - Keep output as an extracted `.wav` or `.mp3` file.
 - Isolate FFmpeg commands in utility functions.
 
-Add or update:
-
-```txt
-services/ai-service/app/utils/ffmpeg_utils.py
-services/ai-service/app/services/audio_service.py
-```
-
 Required behavior:
 
 ```txt
@@ -1325,19 +1787,6 @@ For Phase 12:
 - Generate timestamped transcript output.
 - Save transcript as JSON.
 - Do not generate highlights yet.
-
-Add or update:
-
-```txt
-services/ai-service/app/services/transcription_service.py
-services/ai-service/app/schemas/transcript_schema.py
-```
-
-Required output:
-
-```txt
-transcript.json
-```
 
 Each transcript segment should include:
 
@@ -1357,12 +1806,6 @@ For Phase 13:
 - Segment size should usually be 30–60 seconds.
 - Do not add advanced ML highlight detection yet.
 
-Add or update:
-
-```txt
-services/ai-service/app/algorithms/segmenter.py
-```
-
 Each segment should include:
 
 ```txt
@@ -1379,12 +1822,6 @@ For Phase 14:
 - Add a simple rule-based highlight scoring algorithm.
 - Use transcript signals first.
 - Do not add complex ML models yet.
-
-Add or update:
-
-```txt
-services/ai-service/app/algorithms/highlight_scoring.py
-```
 
 Score based on:
 
@@ -1513,11 +1950,15 @@ When adding backend features:
 
 For Express:
 
-- Use Jest or Vitest with Supertest.
+```txt
+Use Jest or Vitest with Supertest.
+```
 
 For FastAPI:
 
-- Use pytest and FastAPI TestClient.
+```txt
+Use pytest and FastAPI TestClient.
+```
 
 ## Documentation Rules
 
@@ -1553,20 +1994,69 @@ python -m compileall app
 
 If a command fails, fix the issue or explain why it failed.
 
+## Secure Development Checklist
+
+Before completing any backend phase, verify:
+
+```txt
+No secrets are hard-coded.
+.env.example is updated.
+All new routes are protected when needed.
+Ownership checks are enforced.
+Inputs are validated with Zod or Pydantic.
+Prisma queries do not trust client ownership claims.
+Upload paths are safe.
+Errors are handled centrally.
+Logs do not expose secrets.
+Arcjet is applied to sensitive routes where available.
+Build passes.
+Tests are added where practical.
+No fake or unused backend features were added.
+```
+
+## Backend Anti-Slop Checklist
+
+Before completing any backend phase, verify:
+
+```txt
+No unused files were added.
+No unused routes were added.
+No fake analytics were added.
+No fake AI scores were added.
+No placeholder admin data was added.
+No sample users/projects/videos were hard-coded.
+No random helper abstractions were added.
+No business logic was placed in controllers.
+No route bypasses auth accidentally.
+No user can access another user’s data.
+No internal FastAPI route is exposed to frontend users.
+```
+
 ## Do Not Do Unless Asked
 
 Do not:
 
-- Add frontend code
-- Add payment features
-- Add social media publishing before the core pipeline works
-- Add complex AI models before the MVP rule-based pipeline works
-- Add Kubernetes
-- Add cloud deployment config
+- Build multiple phases at once
+- Add fake metrics or fake analytics
+- Add fake AI scoring
+- Add unused database models
+- Add unused services or routes
 - Add unnecessary abstractions
-- Rewrite working code without reason
-- Change the product name from RepurposePro
-- Replace Better Auth with custom JWT authentication unless explicitly requested
-- Remove Arcjet once it is added unless explicitly requested
+- Add custom JWT authentication
+- Store auth tokens in localStorage
+- Hard-code secrets or credentials
+- Commit `.env` files
+- Log passwords, cookies, sessions, tokens, or API keys
+- Trust client-provided user IDs or roles
+- Skip ownership checks
+- Skip input validation
+- Expose FastAPI directly to frontend users
 - Store video files directly in PostgreSQL
-- Expose the FastAPI AI Service directly to frontend users
+- Run shell commands with unsanitized input
+- Add FFmpeg before its phase
+- Add Whisper before its phase
+- Add LLM integration before its phase
+- Add payment features before core workflow works
+- Add social media publishing before core workflow works
+- Add admin tools before core workflow works
+- Change the product name from RepurposePro
